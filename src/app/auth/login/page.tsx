@@ -4,30 +4,53 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { verifyPassword } from '@/lib/password'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
+  const [showPassword, setShowPassword] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const router = useRouter()
 
-  const handleEmailLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      // Find user by email
+      const { data: user, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single()
 
-      if (signInError) throw signInError
+      if (fetchError || !user) {
+        setError('Invalid email or password')
+        setLoading(false)
+        return
+      }
+
+      // Verify password
+      const isPasswordValid = await verifyPassword(password, user.password)
+
+      if (!isPasswordValid) {
+        setError('Invalid email or password')
+        setLoading(false)
+        return
+      }
+
+      // Simpan user info
+      localStorage.setItem('user_id', user.id)
+      localStorage.setItem('user_email', user.email)
+      localStorage.setItem('user_username', user.username)
+      localStorage.setItem('user_role', user.role)
 
       router.push('/dashboard')
     } catch (err) {
@@ -40,6 +63,7 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async (): Promise<void> => {
     setLoading(true)
+    setError('')
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -64,18 +88,6 @@ export default function LoginPage() {
       <div className="absolute bottom-0 left-1/2 w-96 h-96 bg-orange-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000" />
 
       <Card className="w-full max-w-md border-orange-200 dark:border-slate-800 shadow-2xl relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm">
-        {/* Logo & Brand */}
-        {/* <div className="flex justify-center pt-8 pb-4">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-              <Vote className="w-7 h-7 text-white" />
-            </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">
-              E-Voting
-            </span>
-          </Link>
-        </div> */}
-
         <CardHeader className="space-y-2 pb-4">
           <CardTitle className="text-3xl text-center font-bold text-slate-900 dark:text-white">
             Welcome Back
@@ -93,7 +105,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleEmailLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Email Address
@@ -105,7 +117,7 @@ export default function LoginPage() {
                 placeholder="you@example.com"
                 required
                 disabled={loading}
-                className="h-11 border-slate-300 dark:border-slate-700 focus:border-orange-500 focus:ring-orange-500"
+                className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500"
               />
             </div>
 
@@ -121,15 +133,28 @@ export default function LoginPage() {
                   Forgot?
                 </Link>
               </div>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                disabled={loading}
-                className="h-11 border-slate-300 dark:border-slate-700 focus:border-orange-500 focus:ring-orange-500"
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  disabled={loading}
+                  className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <Button
@@ -158,7 +183,7 @@ export default function LoginPage() {
             variant="outline"
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full h-12 text-base font-medium border-slate-300 dark:border-slate-700 hover:bg-orange-50 hover:border-orange-300 dark:hover:bg-slate-800"
+            className="w-full h-12 text-base font-medium border-slate-300 dark:border-slate-700 hover:bg-orange-50 hover:border-orange-300 dark:hover:bg-slate-800 dark:text-white"
           >
             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

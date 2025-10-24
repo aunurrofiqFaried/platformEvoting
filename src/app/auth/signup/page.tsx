@@ -4,15 +4,19 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { hashPassword } from '@/lib/password'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle, Loader2, Eye, EyeOff } from 'lucide-react'
 
 export default function SignupPage() {
   const [email, setEmail] = useState<string>('')
+  const [username, setUsername] = useState<string>('')
   const [password, setPassword] = useState<string>('')
   const [confirmPassword, setConfirmPassword] = useState<string>('')
+  const [showPassword, setShowPassword] = useState<boolean>(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const [success, setSuccess] = useState<boolean>(false)
@@ -22,6 +26,19 @@ export default function SignupPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    // Validation
+    if (!username.trim()) {
+      setError('Username is required')
+      setLoading(false)
+      return
+    }
+
+    if (username.length < 3) {
+      setError('Username must be at least 3 characters')
+      setLoading(false)
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -36,18 +53,34 @@ export default function SignupPage() {
     }
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+      // Hash password
+      const hashedPassword = await hashPassword(password)
 
-      if (signUpError) throw signUpError
+      // Create user in users table
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          email: email.toLowerCase(),
+          username: username.toLowerCase(),
+          password: hashedPassword,
+          role: 'member',
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        if (insertError.message.includes('duplicate')) {
+          setError('Email or username already exists')
+        } else {
+          setError(insertError.message)
+        }
+        setLoading(false)
+        return
+      }
 
       setSuccess(true)
       setEmail('')
+      setUsername('')
       setPassword('')
       setConfirmPassword('')
 
@@ -70,18 +103,6 @@ export default function SignupPage() {
       <div className="absolute bottom-0 left-1/2 w-96 h-96 bg-orange-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000" />
 
       <Card className="w-full max-w-md border-orange-200 dark:border-slate-800 shadow-2xl relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm">
-        {/* Logo & Brand */}
-        {/* <div className="flex justify-center pt-8 pb-4">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-              <Vote className="w-7 h-7 text-white" />
-            </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">
-              E-Voting
-            </span>
-          </Link>
-        </div> */}
-
         <CardHeader className="space-y-2 pb-4">
           <CardTitle className="text-3xl text-center font-bold text-slate-900 dark:text-white">
             Create Account
@@ -118,7 +139,22 @@ export default function SignupPage() {
                 placeholder="you@example.com"
                 required
                 disabled={loading || success}
-                className="h-11 border-slate-300 dark:border-slate-700 focus:border-orange-500 focus:ring-orange-500"
+                className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Username
+              </label>
+              <Input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Choose a username (min 3 chars)"
+                required
+                disabled={loading || success}
+                className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500"
               />
             </div>
 
@@ -126,30 +162,58 @@ export default function SignupPage() {
               <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Password
               </label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                required
-                disabled={loading || success}
-                className="h-11 border-slate-300 dark:border-slate-700 focus:border-orange-500 focus:ring-orange-500"
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  required
+                  disabled={loading || success}
+                  className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  disabled={loading || success}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Confirm Password
               </label>
-              <Input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                required
-                disabled={loading || success}
-                className="h-11 border-slate-300 dark:border-slate-700 focus:border-orange-500 focus:ring-orange-500"
-              />
+              <div className="relative">
+                <Input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter your password"
+                  required
+                  disabled={loading || success}
+                  className="h-11 border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-orange-500 focus:ring-orange-500 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  disabled={loading || success}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <Button

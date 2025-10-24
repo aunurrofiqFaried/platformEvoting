@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { Loader2, TrendingUp, Users, Vote, BarChart3 } from 'lucide-react'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipProps } from 'recharts'
 
-// Interface untuk data chart
+// Interfaces
 interface RoomVoteData {
   name: string
   votes: number
@@ -17,10 +17,34 @@ interface StatusData {
   value: number
 }
 
+interface StatisticsData {
+  totalRooms: number
+  totalVotes: number
+  totalCandidates: number
+  activeRooms: number
+}
+
+interface PieLabelProps {
+  cx: number
+  cy: number
+  midAngle: number
+  innerRadius: number
+  outerRadius: number
+  percent: number
+  name: string
+  value: number
+}
+
 export default function StatisticsPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [roomVotes, setRoomVotes] = useState<RoomVoteData[]>([])
   const [statusData, setStatusData] = useState<StatusData[]>([])
+  const [stats, setStats] = useState<StatisticsData>({
+    totalRooms: 0,
+    totalVotes: 0,
+    totalCandidates: 0,
+    activeRooms: 0
+  })
 
   useEffect(() => {
     loadStatistics()
@@ -31,11 +55,11 @@ export default function StatisticsPage() {
       // 1. Load voting rooms dengan vote count
       const { data: rooms } = await supabase
         .from('voting_rooms')
-        .select('id, title')
+        .select('id, title, status')
+        .order('created_at', { ascending: false })
         .limit(5)
 
       if (rooms) {
-        // Untuk setiap room, hitung total votes
         const roomVotePromises = rooms.map(async (room) => {
           const { count } = await supabase
             .from('votes')
@@ -68,11 +92,54 @@ export default function StatisticsPage() {
         { name: 'Closed', value: closedCount || 0 }
       ])
 
+      // 3. Load overall statistics
+      const { count: totalRoomsCount } = await supabase
+        .from('voting_rooms')
+        .select('id', { count: 'exact', head: true })
+
+      const { count: totalVotesCount } = await supabase
+        .from('votes')
+        .select('id', { count: 'exact', head: true })
+
+      const { count: totalCandidatesCount } = await supabase
+        .from('candidates')
+        .select('id', { count: 'exact', head: true })
+
+      setStats({
+        totalRooms: totalRoomsCount || 0,
+        totalVotes: totalVotesCount || 0,
+        totalCandidates: totalCandidatesCount || 0,
+        activeRooms: activeCount || 0
+      })
+
     } catch (error) {
       console.error('Error loading statistics:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Custom label renderer untuk Pie Chart
+  const renderPieLabel = (props: PieLabelProps): string => {
+    const { name, percent } = props
+    return `${name}: ${(percent * 100).toFixed(0)}%`
+  }
+
+  // Custom tooltip untuk Bar Chart
+  const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 shadow-lg">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">
+            {payload[0].payload.name}
+          </p>
+          <p className="text-sm text-orange-600 font-semibold">
+            Votes: {payload[0].value}
+          </p>
+        </div>
+      )
+    }
+    return null
   }
 
   // Warna untuk pie chart
@@ -98,38 +165,118 @@ export default function StatisticsPage() {
         </p>
       </div>
 
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Rooms */}
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Rooms</CardTitle>
+            <BarChart3 className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
+              {stats.totalRooms}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+              All voting rooms created
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Active Rooms */}
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Rooms</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
+              {stats.activeRooms}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+              Currently accepting votes
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Total Votes */}
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Votes</CardTitle>
+            <Vote className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
+              {stats.totalVotes}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+              Votes cast across all rooms
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Total Candidates */}
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Candidates</CardTitle>
+            <Users className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white">
+              {stats.totalCandidates}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+              Candidates in all rooms
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bar Chart - Votes per Room */}
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
             <CardTitle>Votes per Room</CardTitle>
-            <CardDescription>Number of votes in each voting room</CardDescription>
+            <CardDescription>Top 5 voting rooms by vote count</CardDescription>
           </CardHeader>
           <CardContent>
             {roomVotes.length === 0 ? (
-              <p className="text-center py-12 text-slate-500 dark:text-slate-400">
-                No voting data available yet
-              </p>
+              <div className="flex flex-col items-center justify-center py-12">
+                <BarChart3 className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
+                <p className="text-center text-slate-500 dark:text-slate-400">
+                  No voting data available yet
+                </p>
+                <p className="text-center text-sm text-slate-400 dark:text-slate-500 mt-1">
+                  Create a voting room to see statistics
+                </p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={roomVotes}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" />
+                  <CartesianGrid 
+                    strokeDasharray="3 3" 
+                    className="stroke-slate-200 dark:stroke-slate-700" 
+                    opacity={0.5}
+                  />
                   <XAxis 
                     dataKey="name" 
                     className="text-xs"
-                    tick={{ fill: 'currentColor' }}
+                    tick={{ fill: 'currentColor', fontSize: 12 }}
+                    stroke="currentColor"
                   />
-                  <YAxis tick={{ fill: 'currentColor' }} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'var(--background)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px'
-                    }}
+                  <YAxis 
+                    tick={{ fill: 'currentColor', fontSize: 12 }} 
+                    stroke="currentColor"
                   />
-                  <Legend />
-                  <Bar dataKey="votes" fill="#f97316" radius={[8, 8, 0, 0]} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: '14px' }} />
+                  <Bar 
+                    dataKey="votes" 
+                    fill="#f97316" 
+                    radius={[8, 8, 0, 0]}
+                    name="Total Votes"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -144,9 +291,15 @@ export default function StatisticsPage() {
           </CardHeader>
           <CardContent>
             {statusData.every(d => d.value === 0) ? (
-              <p className="text-center py-12 text-slate-500 dark:text-slate-400">
-                No rooms created yet
-              </p>
+              <div className="flex flex-col items-center justify-center py-12">
+                <Vote className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
+                <p className="text-center text-slate-500 dark:text-slate-400">
+                  No rooms created yet
+                </p>
+                <p className="text-center text-sm text-slate-400 dark:text-slate-500 mt-1">
+                  Start by creating your first voting room
+                </p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -155,17 +308,27 @@ export default function StatisticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={renderPieLabel}
                     outerRadius={100}
                     fill="#8884d8"
                     dataKey="value"
                   >
                     {statusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]} 
+                      />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'var(--background)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '14px' }} />
                 </PieChart>
               </ResponsiveContainer>
             )}
