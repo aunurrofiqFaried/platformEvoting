@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, TrendingUp, Users, Vote, BarChart3 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, type TooltipProps as RechartsTooltipProps } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 // Interfaces
 interface RoomVoteData {
@@ -110,24 +110,7 @@ export default function StatisticsPage() {
     }
   }
 
-  // Custom tooltip untuk Bar Chart
-  const CustomBarTooltip = (props: RechartsTooltipProps<number, string>) => {
-    const { active, payload } = props
-    if (active && payload && payload.length > 0) {
-      const data = payload[0].payload as RoomVoteData
-      return (
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 shadow-lg">
-          <p className="text-sm font-medium text-slate-900 dark:text-white">
-            {data.name}
-          </p>
-          <p className="text-sm text-orange-600 font-semibold">
-            Votes: {data.votes}
-          </p>
-        </div>
-      )
-    }
-    return null
-  }
+
 
   // Warna untuk pie chart
   const COLORS = ['#22c55e', '#64748b']
@@ -252,7 +235,7 @@ export default function StatisticsPage() {
                   <YAxis 
                     tick={{ fontSize: 12, fill: '#64748b' }}
                   />
-                  <Tooltip content={<CustomBarTooltip />} />
+                  <Tooltip />
                   <Bar 
                     dataKey="votes" 
                     fill="#f97316" 
