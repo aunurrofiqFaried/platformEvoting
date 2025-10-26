@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, TrendingUp, Users, Vote, BarChart3 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipProps } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 // Interfaces
 interface RoomVoteData {
@@ -12,7 +12,7 @@ interface RoomVoteData {
   votes: number
 }
 
-interface StatusData {
+interface RoomStatus {
   name: string
   value: number
 }
@@ -24,21 +24,21 @@ interface StatisticsData {
   activeRooms: number
 }
 
-interface PieLabelProps {
-  cx: number
-  cy: number
-  midAngle: number
-  innerRadius: number
-  outerRadius: number
-  percent: number
+interface TooltipPayload {
   name: string
   value: number
+  payload: RoomVoteData
+}
+
+interface TooltipProps {
+  active?: boolean
+  payload?: TooltipPayload[]
 }
 
 export default function StatisticsPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [roomVotes, setRoomVotes] = useState<RoomVoteData[]>([])
-  const [statusData, setStatusData] = useState<StatusData[]>([])
+  const [statusData, setStatusData] = useState<RoomStatus[]>([])
   const [stats, setStats] = useState<StatisticsData>({
     totalRooms: 0,
     totalVotes: 0,
@@ -53,13 +53,13 @@ export default function StatisticsPage() {
   const loadStatistics = async (): Promise<void> => {
     try {
       // 1. Load voting rooms dengan vote count
-      const { data: rooms } = await supabase
+      const { data: rooms, error: roomsError } = await supabase
         .from('voting_rooms')
         .select('id, title, status')
         .order('created_at', { ascending: false })
         .limit(5)
 
-      if (rooms) {
+      if (!roomsError && rooms && rooms.length > 0) {
         const roomVotePromises = rooms.map(async (room) => {
           const { count } = await supabase
             .from('votes')
@@ -77,20 +77,22 @@ export default function StatisticsPage() {
       }
 
       // 2. Load room status (active vs closed)
-      const { count: activeCount } = await supabase
+      const { count: activeCount, error: activeError } = await supabase
         .from('voting_rooms')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'active')
 
-      const { count: closedCount } = await supabase
+      const { count: closedCount, error: closedError } = await supabase
         .from('voting_rooms')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'closed')
 
-      setStatusData([
-        { name: 'Active', value: activeCount || 0 },
-        { name: 'Closed', value: closedCount || 0 }
-      ])
+      if (!activeError && !closedError) {
+        setStatusData([
+          { name: 'Active', value: activeCount || 0 },
+          { name: 'Closed', value: closedCount || 0 }
+        ])
+      }
 
       // 3. Load overall statistics
       const { count: totalRoomsCount } = await supabase
@@ -119,22 +121,18 @@ export default function StatisticsPage() {
     }
   }
 
-  // Custom label renderer untuk Pie Chart
-  const renderPieLabel = (props: PieLabelProps): string => {
-    const { name, percent } = props
-    return `${name}: ${(percent * 100).toFixed(0)}%`
-  }
-
   // Custom tooltip untuk Bar Chart
-  const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
-    if (active && payload && payload.length) {
+  const CustomBarTooltip = (props: TooltipProps) => {
+    const { active, payload } = props
+    if (active && payload && payload.length > 0) {
+      const data = payload[0].payload as RoomVoteData
       return (
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 shadow-lg">
           <p className="text-sm font-medium text-slate-900 dark:text-white">
-            {payload[0].payload.name}
+            {data.name}
           </p>
           <p className="text-sm text-orange-600 font-semibold">
-            Votes: {payload[0].value}
+            Votes: {data.votes}
           </p>
         </div>
       )
@@ -168,9 +166,9 @@ export default function StatisticsPage() {
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Rooms */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Rooms</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Total Rooms</CardTitle>
             <BarChart3 className="h-4 w-4 text-slate-600 dark:text-slate-400" />
           </CardHeader>
           <CardContent>
@@ -184,9 +182,9 @@ export default function StatisticsPage() {
         </Card>
 
         {/* Active Rooms */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Rooms</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Active Rooms</CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
@@ -200,9 +198,9 @@ export default function StatisticsPage() {
         </Card>
 
         {/* Total Votes */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Votes</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Total Votes</CardTitle>
             <Vote className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
@@ -216,9 +214,9 @@ export default function StatisticsPage() {
         </Card>
 
         {/* Total Candidates */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Candidates</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Total Candidates</CardTitle>
             <Users className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
@@ -235,9 +233,9 @@ export default function StatisticsPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bar Chart - Votes per Room */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader>
-            <CardTitle>Votes per Room</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Votes per Room</CardTitle>
             <CardDescription>Top 5 voting rooms by vote count</CardDescription>
           </CardHeader>
           <CardContent>
@@ -256,21 +254,16 @@ export default function StatisticsPage() {
                 <BarChart data={roomVotes}>
                   <CartesianGrid 
                     strokeDasharray="3 3" 
-                    className="stroke-slate-200 dark:stroke-slate-700" 
-                    opacity={0.5}
+                    stroke="#cbd5e1"
                   />
                   <XAxis 
                     dataKey="name" 
-                    className="text-xs"
-                    tick={{ fill: 'currentColor', fontSize: 12 }}
-                    stroke="currentColor"
+                    tick={{ fontSize: 12, fill: '#64748b' }}
                   />
                   <YAxis 
-                    tick={{ fill: 'currentColor', fontSize: 12 }} 
-                    stroke="currentColor"
+                    tick={{ fontSize: 12, fill: '#64748b' }}
                   />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: '14px' }} />
+                  <Tooltip content={<CustomBarTooltip />} />
                   <Bar 
                     dataKey="votes" 
                     fill="#f97316" 
@@ -284,13 +277,13 @@ export default function StatisticsPage() {
         </Card>
 
         {/* Pie Chart - Room Status */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader>
-            <CardTitle>Room Status Distribution</CardTitle>
+            <CardTitle className="text-slate-900 dark:text-white">Room Status Distribution</CardTitle>
             <CardDescription>Active vs Closed voting rooms</CardDescription>
           </CardHeader>
           <CardContent>
-            {statusData.every(d => d.value === 0) ? (
+            {statusData.length === 0 || statusData.every(d => d.value === 0) ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <Vote className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
                 <p className="text-center text-slate-500 dark:text-slate-400">
@@ -308,8 +301,8 @@ export default function StatisticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={renderPieLabel}
-                    outerRadius={100}
+                    label={(entry: RoomStatus) => `${entry.name}: ${entry.value}`}
+                    outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
                   >
@@ -320,15 +313,7 @@ export default function StatisticsPage() {
                       />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{
-                      backgroundColor: 'var(--background)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      fontSize: '14px'
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '14px' }} />
+                  <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
             )}
