@@ -44,7 +44,7 @@ export function Navbar({ userName, userEmail, onMenuClick }: NavbarProps) {
           </Button>
 
           {/* Search Bar - Hidden on small mobile */}
-          <div className="hidden sm:block flex-1 max-w-md">
+          {/* <div className="hidden sm:block flex-1 max-w-md">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
@@ -53,7 +53,7 @@ export function Navbar({ userName, userEmail, onMenuClick }: NavbarProps) {
                 className="pl-10 h-9 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
               />
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* Right Side */}
@@ -67,10 +67,10 @@ export function Navbar({ userName, userEmail, onMenuClick }: NavbarProps) {
           <ThemeToggle />
 
           {/* Notifications */}
-          <Button variant="ghost" size="icon" className="relative">
+          {/* <Button variant="ghost" size="icon" className="relative">
             <Bell className="w-5 h-5" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />
-          </Button>
+          </Button> */}
 
           {/* User Menu */}
           <DropdownMenu>

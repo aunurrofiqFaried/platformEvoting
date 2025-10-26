@@ -309,7 +309,7 @@ export default function SettingsPage() {
         </SettingsSection>
 
         {/* Notifications Section */}
-        <SettingsSection
+        {/* <SettingsSection
           title="Notifications"
           description="Manage how you receive notifications"
         >
@@ -348,7 +348,7 @@ export default function SettingsPage() {
               />
             </div>
           </SettingsItem>
-        </SettingsSection>
+        </SettingsSection> */}
 
         {/* Danger Zone */}
         <SettingsSection
