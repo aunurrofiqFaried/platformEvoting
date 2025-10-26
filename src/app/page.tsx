@@ -6,11 +6,19 @@ import { ArrowRight, Check, Lock, Users, Zap, BarChart3, Shield, Moon, Sun } fro
 
 export default function EvotingLanding() {
   const [isDark, setIsDark] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Cek preferensi sistem saat pertama kali load
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setIsDark(prefersDark);
+    setMounted(true);
+    // Cek localStorage dulu
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+      setIsDark(saved === 'dark');
+    } else {
+      // Jika belum ada, cek preferensi sistem
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setIsDark(prefersDark);
+    }
 
     // Listen untuk perubahan preferensi sistem
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -18,6 +26,16 @@ export default function EvotingLanding() {
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDark;
+    setIsDark(newTheme);
+    localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+  };
+
+  if (!mounted) {
+    return null; // Prevent hydration mismatch
+  }
 
   const theme = {
     bg: isDark ? 'bg-black' : 'bg-white',
@@ -45,7 +63,7 @@ export default function EvotingLanding() {
           </div>
           <div className="flex gap-4 items-center">
             <button
-              onClick={() => setIsDark(!isDark)}
+              onClick={toggleTheme}
               className={`p-2 rounded-lg ${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-orange-100 hover:bg-orange-200'} transition`}
             >
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5 text-orange-600" />}
@@ -175,10 +193,10 @@ export default function EvotingLanding() {
           
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { number: "10M+", label: "Votes Processed" },
-              { number: "50K+", label: "Users" },
-              { number: "99.99%", label: "Uptime" },
-              { number: "180+", label: "Countries" },
+              { number: "-", label: "Votes Processed" },
+              { number: "-", label: "Users" },
+              { number: "-", label: "Uptime" },
+              { number: "-", label: "Countries" },
             ].map((stat, idx) => (
               <div key={idx} className={`p-6 rounded-lg border ${theme.border} transition-colors`}>
                 <div className="text-4xl font-bold text-orange-500 mb-2">{stat.number}</div>

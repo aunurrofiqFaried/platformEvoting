@@ -40,7 +40,7 @@ export function CandidateCard({
       <CardContent className="p-0 space-y-0">
         {/* Image Section */}
         {candidate.image_url ? (
-          <div className="relative w-full h-48 bg-slate-200 dark:bg-slate-800">
+          <div className="relative w-full h-96 bg-slate-200 dark:bg-slate-800">
             <Image
               src={candidate.image_url}
               alt={candidate.name}
