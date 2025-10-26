@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, TrendingUp, Users, Vote, BarChart3 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, type PieLabelRenderProps } from 'recharts'
 
 // Interfaces
 interface RoomVoteData {
@@ -15,6 +15,7 @@ interface RoomVoteData {
 interface RoomStatus {
   name: string
   value: number
+  [key: string]: string | number
 }
 
 interface StatisticsData {
@@ -273,7 +274,7 @@ export default function StatisticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={(entry: RoomStatus) => `${entry.name}: ${entry.value}`}
+                    label={(props: PieLabelRenderProps) => `${props.name}: ${props.value}`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
