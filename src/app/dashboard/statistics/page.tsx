@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, TrendingUp, Users, Vote, BarChart3 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, type TooltipProps as RechartsTooltipProps } from 'recharts'
 
 // Interfaces
 interface RoomVoteData {
@@ -22,17 +22,6 @@ interface StatisticsData {
   totalVotes: number
   totalCandidates: number
   activeRooms: number
-}
-
-interface TooltipPayload {
-  name: string
-  value: number
-  payload: RoomVoteData
-}
-
-interface TooltipProps {
-  active?: boolean
-  payload?: TooltipPayload[]
 }
 
 export default function StatisticsPage() {
@@ -122,7 +111,7 @@ export default function StatisticsPage() {
   }
 
   // Custom tooltip untuk Bar Chart
-  const CustomBarTooltip = (props: TooltipProps) => {
+  const CustomBarTooltip = (props: RechartsTooltipProps<number, string>) => {
     const { active, payload } = props
     if (active && payload && payload.length > 0) {
       const data = payload[0].payload as RoomVoteData
