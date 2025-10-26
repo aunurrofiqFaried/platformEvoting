@@ -104,9 +104,11 @@ export default function EvotingLanding() {
           </p>
           
           <div className="flex gap-4 justify-center mb-16 flex-wrap">
+            <Link href="dashboard">
             <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-6 text-lg">
               Start Voting <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
+            </Link>
             <Button 
               variant="outline"
               className={`${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-orange-100 hover:bg-orange-200'} font-semibold border ${theme.border} px-8 py-6 text-lg transition-colors`}
@@ -193,10 +195,10 @@ export default function EvotingLanding() {
           
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { number: "-", label: "Votes Processed" },
-              { number: "-", label: "Users" },
-              { number: "-", label: "Uptime" },
-              { number: "-", label: "Countries" },
+              { number: "10M+", label: "Votes Processed" },
+              { number: "50K+", label: "Users" },
+              { number: "99.99%", label: "Uptime" },
+              { number: "180+", label: "Countries" },
             ].map((stat, idx) => (
               <div key={idx} className={`p-6 rounded-lg border ${theme.border} transition-colors`}>
                 <div className="text-4xl font-bold text-orange-500 mb-2">{stat.number}</div>
