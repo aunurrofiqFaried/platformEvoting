@@ -1,31 +1,52 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Check, Lock, Users, Zap, BarChart3, Shield, Moon, Sun } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function EvotingLanding() {
   const [isDark, setIsDark] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
-    // Cek localStorage dulu
     const saved = localStorage.getItem('theme');
     if (saved) {
       setIsDark(saved === 'dark');
     } else {
-      // Jika belum ada, cek preferensi sistem
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       setIsDark(prefersDark);
     }
 
-    // Listen untuk perubahan preferensi sistem
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = (e: MediaQueryListEvent) => setIsDark(e.matches);
     mediaQuery.addEventListener('change', handleChange);
+    
+    checkAuth();
+    
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session);
+    } catch (error) {
+      console.error('Auth check error:', error);
+    }
+  };
+
+  const handleStartVoting = () => {
+    if (isAuthenticated) {
+      router.push('/dashboard');
+    } else {
+      router.push('/auth/login');
+    }
+  };
 
   const toggleTheme = () => {
     const newTheme = !isDark;
@@ -34,7 +55,7 @@ export default function EvotingLanding() {
   };
 
   if (!mounted) {
-    return null; // Prevent hydration mismatch
+    return null;
   }
 
   const theme = {
@@ -57,9 +78,9 @@ export default function EvotingLanding() {
             Evoting
           </div>
           <div className="hidden md:flex gap-8">
-            <a href="#features" className={`text-sm ${theme.secondary} hover:${theme.text} trasition`}>Features</a>
-            <a href="#security" className={`text-sm ${theme.secondary} hover:${theme.text} transition`}>Security</a>
-            <a href="#community" className={`text-sm ${theme.secondary} hover:${theme.text} transition`}>Community</a>
+            <a href="#features" className={`text-sm ${theme.secondary} hover:text-white transition`}>Features</a>
+            <a href="#security" className={`text-sm ${theme.secondary} hover:text-white transition`}>Security</a>
+            <a href="#community" className={`text-sm ${theme.secondary} hover:text-white transition`}>Community</a>
           </div>
           <div className="flex gap-4 items-center">
             <button
@@ -69,28 +90,22 @@ export default function EvotingLanding() {
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5 text-orange-600" />}
             </button>
             <Link href='auth/login'>
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold">
-              Get Started
-            </Button>
+              <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold">
+                Get Started
+              </Button>
             </Link>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-36 pb-20 px-4 sm:px-6 lg:px-8">
-        <div className={`relative  pt-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 rounded-xl overflow-hidden border ${theme.border} ${isDark ? 'bg-gradient-to-b from-orange-500/20 to-transparent' : 'bg-gradient-to-b from-orange-200/30 to-transparent'} transition-colors`}>
-            <div className={`absolute inset-0 ${isDark ? 'bg-grid-white/[0.05]' : 'bg-grid-orange-500/[0.1]'} bg-[size:50px_50px]`} />
-            <div className={`absolute top-1/4 left-1/4 w-64 h-64 ${isDark ? 'bg-orange-500/20' : 'bg-orange-400/20'} rounded-full blur-3xl`} />
-            <div className={`absolute bottom-0 right-0 w-96 h-96 ${isDark ? 'bg-orange-600/10' : 'bg-orange-300/10'} rounded-full blur-3xl`} />
+      <section className="relative pt-36 pb-20 px-4 sm:px-6 lg:px-8 z-10">
+        <div className="relative max-w-4xl mx-auto text-center">
+          {/* Background Effects */}
+          <div className={`absolute inset-0 -z-10 ${isDark ? 'bg-grid-white/[0.05]' : 'bg-grid-orange-500/[0.1]'} bg-[size:50px_50px]`} />
+          <div className={`absolute top-1/4 left-1/4 -z-10 w-64 h-64 ${isDark ? 'bg-orange-500/20' : 'bg-orange-400/20'} rounded-full blur-3xl`} />
+          <div className={`absolute bottom-0 right-0 -z-10 w-96 h-96 ${isDark ? 'bg-orange-600/10' : 'bg-orange-300/10'} rounded-full blur-3xl`} />
           
-        <div className="max-w-4xl mx-auto text-center">
-          {/* <div className="mb-8 inline-block">
-            <span className={`px-4 py-2 rounded-full ${isDark ? 'bg-white/10 border-white/20' : 'bg-orange-100 border-orange-300'} border text-sm text-orange-500 transition-colors`}>
-              Revolutionizing Digital Democracy
-            </span>
-          </div>
-           */}
           <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
             Build in a weekend
             <br />
@@ -103,22 +118,19 @@ export default function EvotingLanding() {
             Evoting adalah platform voting yang aman, scalable, dan transparan. Dirancang untuk organisasi modern yang membutuhkan solusi voting digital yang dapat diandalkan.
           </p>
           
-          <div className="flex gap-4 justify-center mb-16 flex-wrap">
-            <Link href="dashboard">
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-6 text-lg">
-              Start Voting <ArrowRight className="ml-2 w-5 h-5" />
-            </Button>
-            </Link>
-            <Button 
-              variant="outline"
-              className={`${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-orange-100 hover:bg-orange-200'} font-semibold border ${theme.border} px-8 py-6 text-lg transition-colors`}
+          <div className="flex gap-4 justify-center mb-16 flex-wrap relative z-20">
+            <button 
+              onClick={handleStartVoting}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors cursor-pointer"
+            >
+              Start Voting <ArrowRight className="ml-2 w-4 h-4 inline" />
+            </button>
+            <button 
+              className={`${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-orange-100 hover:bg-orange-200'} font-semibold border ${theme.border} px-6 py-3 rounded-lg transition-colors cursor-pointer`}
             >
               View Documentation
-            </Button>
+            </button>
           </div>
-</div>
-          {/* Hero Visual */}
-          
         </div>
       </section>
 
@@ -195,10 +207,10 @@ export default function EvotingLanding() {
           
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { number: "10M+", label: "Votes Processed" },
-              { number: "50K+", label: "Users" },
-              { number: "99.99%", label: "Uptime" },
-              { number: "180+", label: "Countries" },
+              { number: "-", label: "Votes Processed" },
+              { number: "-", label: "Users" },
+              { number: "-", label: "Uptime" },
+              { number: "-", label: "Countries" },
             ].map((stat, idx) => (
               <div key={idx} className={`p-6 rounded-lg border ${theme.border} transition-colors`}>
                 <div className="text-4xl font-bold text-orange-500 mb-2">{stat.number}</div>
@@ -219,9 +231,9 @@ export default function EvotingLanding() {
             Mulai dengan Evoting hari ini dan rasakan perbedaannya
           </p>
           <Link href='auth/signup'>
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-6 text-lg">
-            Get Started for Free <ArrowRight className="ml-2 w-5 h-5" />
-          </Button>
+            <Button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-6 text-lg">
+              Get Started for Free <ArrowRight className="ml-2 w-5 h-5" />
+            </Button>
           </Link>
         </div>
       </section>
@@ -247,7 +259,7 @@ export default function EvotingLanding() {
                 <ul className="space-y-2">
                   {col.links.map((link, i) => (
                     <li key={i}>
-                      <a href="#" className={`${theme.secondary} hover:${theme.text} transition text-sm`}>
+                      <a href="#" className={`${theme.secondary} hover:text-white transition text-sm`}>
                         {link}
                       </a>
                     </li>
@@ -261,7 +273,7 @@ export default function EvotingLanding() {
             <p className={`${theme.secondary} text-sm`}>© 2025 Evoting. All rights reserved.</p>
             <div className="flex gap-4">
               {['Twitter', 'GitHub', 'LinkedIn'].map((social) => (
-                <a key={social} href="#" className={`${theme.secondary} hover:${theme.text} transition text-sm`}>
+                <a key={social} href="#" className={`${theme.secondary} hover:text-white transition text-sm`}>
                   {social}
                 </a>
               ))}
