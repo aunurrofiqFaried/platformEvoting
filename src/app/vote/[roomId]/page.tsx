@@ -3,18 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useVoting } from '@/hooks/useVoting';
+import { useRealtimeCandidates } from '@/hooks/useRealtimeCandidates';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, LogOut, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-
-interface Candidate {
-  id: string
-  name: string
-  vote_count: number
-}
 
 export default function VotePage() {
   const params = useParams();
@@ -23,65 +18,20 @@ export default function VotePage() {
 
   const {
     room,
-    candidates: initialCandidates,
     user,
     hasVoted,
-    loading,
+    loading: votingLoading,
     error,
     vote,
   } = useVoting(roomId);
 
-  const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
+  const { candidates, loading: candidatesLoading, refetch: refetchCandidates } = useRealtimeCandidates(roomId);
+
   const [isVoting, setIsVoting] = useState(false);
   const [selectedCandidateLocal, setSelectedCandidateLocal] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
 
-  // Setup realtime subscription
-  useEffect(() => {
-    if (!roomId) return;
-
-    // Subscribe to candidates changes
-    const subscription = supabase
-      .channel(`candidates:room_id=eq.${roomId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'candidates',
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          // Fetch updated candidates
-          loadCandidates();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [roomId]);
-
-  // Update candidates when initial candidates change
-  useEffect(() => {
-    setCandidates(initialCandidates);
-  }, [initialCandidates]);
-
-  const loadCandidates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('candidates')
-        .select('id, name, vote_count')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setCandidates(data || []);
-    } catch (error) {
-      console.error('Error loading candidates:', error);
-    }
-  };
+  const loading = votingLoading || candidatesLoading;
 
   const totalVotes = candidates.reduce((sum, c) => sum + c.vote_count, 0);
 
@@ -111,8 +61,8 @@ export default function VotePage() {
     if (success) {
       setSelectedCandidateLocal(null);
       setShowResults(true);
-      // Reload candidates to get latest results
-      loadCandidates();
+      // Refetch candidates to get latest results
+      await refetchCandidates();
     }
   };
 
