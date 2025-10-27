@@ -7,6 +7,7 @@ import { StatsCard } from '@/components/dashboard/stat-card'
 import { Users, Vote, BarChart3, TrendingUp, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface DashboardStats {
   totalMembers: number
@@ -30,6 +31,17 @@ interface RecentRoom {
   } | null
 }
 
+interface VoteData {
+  date: string
+  votes: number
+}
+
+interface RoomStatusData {
+  name: string
+  value: number
+  [key: string]: string | number
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
     totalMembers: 0,
@@ -43,6 +55,8 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState<'admin' | 'member' | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([])
+  const [votingActivityData, setVotingActivityData] = useState<VoteData[]>([])
+  const [roomStatusData, setRoomStatusData] = useState<RoomStatusData[]>([])
   const [loading, setLoading] = useState<boolean>(true)
 
   useEffect(() => {
@@ -90,6 +104,36 @@ export default function DashboardPage() {
             .limit(5)
 
           setRecentRooms(rooms || [])
+
+          // Load voting activity (votes per day for last 7 days)
+          const { data: allVotes } = await supabase
+            .from('votes')
+            .select('created_at')
+            .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+            .order('created_at', { ascending: true })
+
+          // Group votes by date
+          const votesPerDay: { [key: string]: number } = {}
+          allVotes?.forEach((vote) => {
+            const date = new Date(vote.created_at).toLocaleDateString('id-ID', {
+              month: 'short',
+              day: 'numeric'
+            })
+            votesPerDay[date] = (votesPerDay[date] || 0) + 1
+          })
+
+          const chartData = Object.entries(votesPerDay).map(([date, votes]) => ({
+            date,
+            votes
+          }))
+          setVotingActivityData(chartData)
+
+          // Load room status
+          const closedCount = (roomsResult.count || 0) - (activeRoomsResult.count || 0)
+          setRoomStatusData([
+            { name: 'Active', value: activeRoomsResult.count || 0 },
+            { name: 'Closed', value: closedCount }
+          ])
         } else {
           // MEMBER: Load only personal stats
           const [myRoomsResult, activeMyRoomsResult, myVotesResult] = await Promise.all([
@@ -142,6 +186,8 @@ export default function DashboardPage() {
       </div>
     )
   }
+
+  const COLORS = ['#f97316', '#64748b']
 
   return (
     <div className="space-y-6">
@@ -229,28 +275,79 @@ export default function DashboardPage() {
       {/* Charts Row - For Admin Only */}
       {userRole === 'admin' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Placeholder for Charts */}
+          {/* Voting Activity Chart */}
           <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
             <CardHeader>
               <CardTitle className="text-lg dark:text-white">Voting Activity</CardTitle>
-              <CardDescription>Vote distribution over time</CardDescription>
+              <CardDescription>Vote distribution over last 7 days</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                Chart will be implemented with recharts
-              </div>
+              {votingActivityData.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  No voting data yet
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={votingActivityData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #475569',
+                        borderRadius: '8px',
+                        color: '#fff'
+                      }}
+                    />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="votes" 
+                      stroke="#f97316" 
+                      strokeWidth={2}
+                      dot={{ fill: '#f97316' }}
+                      name="Votes"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
+          {/* Room Status Chart */}
           <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
             <CardHeader>
               <CardTitle className="text-lg dark:text-white">Room Status</CardTitle>
               <CardDescription>Active vs Closed rooms</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                Pie chart will be here
-              </div>
+              {roomStatusData.length === 0 || roomStatusData.every(d => d.value === 0) ? (
+                <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  No rooms created yet
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={roomStatusData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value }) => `${name}: ${value}`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {roomStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </div>
