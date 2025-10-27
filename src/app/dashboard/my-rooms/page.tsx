@@ -302,19 +302,27 @@ function RoomCard({
         </div>
 
         {/* Actions */}
-        <div className="grid grid-cols-2 gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
           <Button
             variant="outline"
             size="sm"
             onClick={() => onCopyLink(room.id)}
             className="dark:border-slate-600 dark:text-white"
           >
-            Copy Link
+            Copy
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => onEdit(room)}
+            className="dark:border-slate-600 dark:text-white"
+          >
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.location.href = `/dashboard/rooms/${room.id}`}
             className="dark:border-slate-600 dark:text-white"
           >
             Details
@@ -325,7 +333,7 @@ function RoomCard({
               variant="outline"
               size="sm"
               onClick={() => onDeactivate(room)}
-              className="col-span-2 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950"
+              className="col-span-3 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950"
             >
               Deactivate
             </Button>
@@ -335,7 +343,7 @@ function RoomCard({
             variant="outline"
             size="sm"
             onClick={() => onDelete(room)}
-            className="col-span-2 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+            className="col-span-3 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
           >
             Delete
           </Button>
