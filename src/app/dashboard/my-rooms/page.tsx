@@ -317,7 +317,7 @@ function RoomCard({
             onClick={() => onEdit(room)}
             className="dark:border-slate-600 dark:text-white"
           >
-            Edit
+            Details
           </Button>
           
           {room.status === 'active' && (
