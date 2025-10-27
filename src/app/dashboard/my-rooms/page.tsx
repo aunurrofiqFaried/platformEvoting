@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { RoomCard } from '@/components/dashboard/room-card'
-import { EmptyState } from '@/components/dashboard/empty-state'
 import { Button } from '@/components/ui/button'
 import { Plus, Vote, Loader2 } from 'lucide-react'
 import { VotingRoom } from '@/lib/types'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/dashboard/empty-state'
 
 interface User {
   id: string
@@ -16,10 +16,23 @@ interface User {
   role: 'admin' | 'member'
 }
 
+interface ConfirmState {
+  isOpen: boolean
+  action: 'delete' | 'deactivate' | null
+  room: VotingRoom | null
+  isLoading: boolean
+}
+
 export default function MyRoomsPage() {
   const [user, setUser] = useState<User | null>(null)
   const [rooms, setRooms] = useState<VotingRoom[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmState>({
+    isOpen: false,
+    action: null,
+    room: null,
+    isLoading: false,
+  })
   const router = useRouter()
 
   useEffect(() => {
@@ -74,47 +87,71 @@ export default function MyRoomsPage() {
     toast.success('Voting Link Copied to Clipboard')
   }
 
-  const handleDelete = async (room: VotingRoom): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete "${room.title}"?`)) {
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('voting_rooms')
-        .delete()
-        .eq('id', room.id)
-
-      if (error) throw error
-
-      setRooms(rooms.filter(r => r.id !== room.id))
-      toast.success('Room Deleted Successfully')
-    } catch (error) {
-      console.error('Error deleting room:', error)
-      toast.error('Failed to delete Room')
-    }
+  const openDeleteDialog = (room: VotingRoom): void => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'delete',
+      room,
+      isLoading: false,
+    })
   }
 
-  const handleDeactivate = async (room: VotingRoom): Promise<void> => {
-    if (!confirm(`Are you sure you want to deactivate "${room.title}"? Voting will be closed.`)) {
-      return
-    }
+  const openDeactivateDialog = (room: VotingRoom): void => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'deactivate',
+      room,
+      isLoading: false,
+    })
+  }
+
+  const closeDialog = (): void => {
+    setConfirmDialog({
+      isOpen: false,
+      action: null,
+      room: null,
+      isLoading: false,
+    })
+  }
+
+  const handleConfirm = async (): Promise<void> => {
+    if (!confirmDialog.room) return
+
+    setConfirmDialog(prev => ({ ...prev, isLoading: true }))
 
     try {
-      const { error } = await supabase
-        .from('voting_rooms')
-        .update({ status: 'closed' })
-        .eq('id', room.id)
+      if (confirmDialog.action === 'delete') {
+        const { error } = await supabase
+          .from('voting_rooms')
+          .delete()
+          .eq('id', confirmDialog.room.id)
 
-      if (error) throw error
+        if (error) throw error
 
-      setRooms(rooms.map(r => 
-        r.id === room.id ? { ...r, status: 'closed' } : r
-      ))
-      toast.success('Room Deactivated Successfully')
+        setRooms(rooms.filter(r => r.id !== confirmDialog.room!.id))
+        toast.success('Room Deleted Successfully')
+      } else if (confirmDialog.action === 'deactivate') {
+        const { error } = await supabase
+          .from('voting_rooms')
+          .update({ status: 'closed' })
+          .eq('id', confirmDialog.room.id)
+
+        if (error) throw error
+
+        setRooms(rooms.map(r => 
+          r.id === confirmDialog.room!.id ? { ...r, status: 'closed' } : r
+        ))
+        toast.success('Room Deactivated Successfully')
+      }
+
+      closeDialog()
     } catch (error) {
-      console.error('Error deactivating room:', error)
-      toast.error('Failed to deactivate Room')
+      console.error('Error:', error)
+      const errorMessage = confirmDialog.action === 'delete' 
+        ? 'Failed to delete Room'
+        : 'Failed to deactivate Room'
+      toast.error(errorMessage)
+      setConfirmDialog(prev => ({ ...prev, isLoading: false }))
     }
   }
 
@@ -170,23 +207,44 @@ export default function MyRoomsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rooms.map((room) => (
-            <RoomCardWithDeactivate
+            <RoomCard
               key={room.id}
               room={room}
               onCopyLink={handleCopyLink}
-              onDelete={handleDelete}
-              onDeactivate={handleDeactivate}
+              onDelete={openDeleteDialog}
+              onDeactivate={openDeactivateDialog}
               onEdit={(room) => router.push(`/dashboard/rooms/${room.id}/edit`)}
             />
           ))}
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={
+          confirmDialog.action === 'delete'
+            ? `Delete "${confirmDialog.room?.title}"?`
+            : `Deactivate "${confirmDialog.room?.title}"?`
+        }
+        description={
+          confirmDialog.action === 'delete'
+            ? 'This action cannot be undone. The room and all its data will be permanently deleted.'
+            : 'The room will be closed and voting will stop. Users will not be able to vote.'
+        }
+        actionLabel={confirmDialog.action === 'delete' ? 'Delete' : 'Deactivate'}
+        cancelLabel="Cancel"
+        isDestructive={true}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={handleConfirm}
+        onCancel={closeDialog}
+      />
     </div>
   )
 }
 
-// Component untuk menampilkan room dengan tombol deactivate
-function RoomCardWithDeactivate({
+// Room Card Component
+function RoomCard({
   room,
   onCopyLink,
   onDelete,
@@ -204,13 +262,13 @@ function RoomCardWithDeactivate({
       <div className="p-6 space-y-4">
         {/* Room Header */}
         <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 {room.title}
               </h3>
               <span
-                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                className={`px-2 py-1 text-xs font-medium rounded-full flex-shrink-0 ${
                   room.status === 'active'
                     ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
                     : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
@@ -220,7 +278,7 @@ function RoomCardWithDeactivate({
               </span>
             </div>
             {room.description && (
-              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
                 {room.description}
               </p>
             )}
@@ -269,7 +327,7 @@ function RoomCardWithDeactivate({
               onClick={() => onDeactivate(room)}
               className="col-span-2 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950"
             >
-              Deactivate Room
+              Deactivate
             </Button>
           )}
 
