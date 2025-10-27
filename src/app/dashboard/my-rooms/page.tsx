@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Plus, Vote, Loader2 } from 'lucide-react'
+import { Plus, Vote, Loader2, Copy, Edit, Eye, AlertTriangle, Trash2 } from 'lucide-react'
 import { VotingRoom } from '@/lib/types'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -213,7 +213,8 @@ export default function MyRoomsPage() {
               onCopyLink={handleCopyLink}
               onDelete={openDeleteDialog}
               onDeactivate={openDeactivateDialog}
-              onEdit={(room) => router.push(`/dashboard/rooms/${room.id}/edit`)}
+              onEdit={(room) => router.push(`/dashboard/create-room?edit=${room.id}`)}
+              onDetails={(roomId) => router.push(`/dashboard/my-rooms/${roomId}/detail`)}
             />
           ))}
         </div>
@@ -249,22 +250,24 @@ function RoomCard({
   onCopyLink,
   onDelete,
   onDeactivate,
-  onEdit
+  onEdit,
+  onDetails
 }: {
   room: VotingRoom
   onCopyLink: (roomId: string) => void
   onDelete: (room: VotingRoom) => void
   onDeactivate: (room: VotingRoom) => void
   onEdit: (room: VotingRoom) => void
+  onDetails: (roomId: string) => void
 }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow">
       <div className="p-6 space-y-4">
         {/* Room Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white truncate">
                 {room.title}
               </h3>
               <span
@@ -302,50 +305,62 @@ function RoomCard({
         </div>
 
         {/* Actions */}
-        <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 flex-wrap">
+          {/* Copy Link */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onCopyLink(room.id)}
-            className="dark:border-slate-600 dark:text-white"
+            className="dark:text-white dark:hover:bg-slate-800"
+            title="Copy voting link"
           >
-            Copy
+            <Copy className="w-4 h-4" />
           </Button>
+
+          {/* Edit */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onEdit(room)}
-            className="dark:border-slate-600 dark:text-white"
+            className="dark:text-white dark:hover:bg-slate-800"
+            title="Edit room"
           >
-            Edit
+            <Edit className="w-4 h-4" />
           </Button>
+
+          {/* Details */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            onClick={() => window.location.href = `/dashboard/rooms/${room.id}`}
-            className="dark:border-slate-600 dark:text-white"
+            onClick={() => onDetails(room.id)}
+            className="dark:text-white dark:hover:bg-slate-800"
+            title="View details"
           >
-            Details
+            <Eye className="w-4 h-4" />
           </Button>
-          
+
+          {/* Deactivate */}
           {room.status === 'active' && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => onDeactivate(room)}
-              className="col-span-3 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950"
+              className="dark:text-orange-400 dark:hover:bg-orange-950 text-orange-600 hover:bg-orange-50"
+              title="Deactivate room"
             >
-              Deactivate
+              <AlertTriangle className="w-4 h-4" />
             </Button>
           )}
 
+          {/* Delete */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onDelete(room)}
-            className="col-span-3 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+            className="dark:text-red-400 dark:hover:bg-red-950 text-red-600 hover:bg-red-50"
+            title="Delete room"
           >
-            Delete
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
       </div>
