@@ -1,16 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useVoting } from '@/hooks/useVoting';
-import { CandidateCard } from '@/components/CandidateCard';
-import { VotingResults } from '@/components/VotingResults';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/lib/supabase';
 import { Loader2, LogOut, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+interface Candidate {
+  id: string
+  name: string
+  vote_count: number
+}
 
 export default function VotePage() {
   const params = useParams();
@@ -19,7 +23,7 @@ export default function VotePage() {
 
   const {
     room,
-    candidates,
+    candidates: initialCandidates,
     user,
     hasVoted,
     loading,
@@ -27,9 +31,57 @@ export default function VotePage() {
     vote,
   } = useVoting(roomId);
 
+  const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
   const [isVoting, setIsVoting] = useState(false);
   const [selectedCandidateLocal, setSelectedCandidateLocal] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
+
+  // Setup realtime subscription
+  useEffect(() => {
+    if (!roomId) return;
+
+    // Subscribe to candidates changes
+    const subscription = supabase
+      .channel(`candidates:room_id=eq.${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'candidates',
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          // Fetch updated candidates
+          loadCandidates();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [roomId]);
+
+  // Update candidates when initial candidates change
+  useEffect(() => {
+    setCandidates(initialCandidates);
+  }, [initialCandidates]);
+
+  const loadCandidates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('candidates')
+        .select('id, name, vote_count')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setCandidates(data || []);
+    } catch (error) {
+      console.error('Error loading candidates:', error);
+    }
+  };
 
   const totalVotes = candidates.reduce((sum, c) => sum + c.vote_count, 0);
 
@@ -59,6 +111,8 @@ export default function VotePage() {
     if (success) {
       setSelectedCandidateLocal(null);
       setShowResults(true);
+      // Reload candidates to get latest results
+      loadCandidates();
     }
   };
 
@@ -187,151 +241,58 @@ export default function VotePage() {
             {candidates.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {candidates.map((candidate) => (
-                  <CandidateCard
+                  <div
                     key={candidate.id}
-                    candidate={candidate}
-                    isSelected={selectedCandidateLocal === candidate.id}
-                    hasVoted={hasVoted}
-                    totalVotes={totalVotes}
-                    onSelect={(id) => {
-                      if (!hasVoted) {
-                        setSelectedCandidateLocal(id);
-                      }
-                    }}
-                    onVote={handleVote}
-                    isVoting={isVoting}
-                  />
+                    onClick={() => setSelectedCandidateLocal(candidate.id)}
+                    className={`p-6 rounded-lg border-2 cursor-pointer transition-all ${
+                      selectedCandidateLocal === candidate.id
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-orange-300'
+                    }`}
+                  >
+                    <h3 className="text-lg font-semibold mb-2 dark:text-white">
+                      {candidate.name}
+                    </h3>
+                    <div className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                      <p>Votes: {candidate.vote_count}</p>
+                    </div>
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleVote(candidate.id);
+                      }}
+                      disabled={selectedCandidateLocal !== candidate.id || isVoting}
+                      className={`w-full ${
+                        selectedCandidateLocal === candidate.id
+                          ? 'bg-orange-500 hover:bg-orange-600'
+                          : 'bg-slate-300 hover:bg-slate-300'
+                      }`}
+                    >
+                      {isVoting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Voting...
+                        </>
+                      ) : (
+                        'Vote'
+                      )}
+                    </Button>
+                  </div>
                 ))}
               </div>
             ) : (
-              <Card className="dark:bg-slate-900">
-                <CardContent className="pt-6 text-center">
-                  <p className="text-slate-600 dark:text-slate-400">No candidates available</p>
-                </CardContent>
-              </Card>
+              <div className="text-center py-12">
+                <p className="text-slate-600 dark:text-slate-400">No candidates available</p>
+              </div>
             )}
           </div>
-        ) : !hasVoted && showResults ? (
-          // View Results Preview (before voting)
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold dark:text-white">Live Results</h2>
-              <Button
-                onClick={() => setShowResults(false)}
-                variant="outline"
-                className="dark:border-slate-600 dark:text-white"
-              >
-                Back to Voting
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Bar Chart */}
-              <div className="lg:col-span-2">
-                <Card className="dark:bg-slate-900">
-                  <div className="p-6">
-                    <h3 className="text-lg font-bold mb-4 dark:text-white">Voting Results</h3>
-                    
-                    {chartData.length === 0 || totalVotes === 0 ? (
-                      <div className="text-center py-12">
-                        <p className="text-slate-600 dark:text-slate-400">No votes yet</p>
-                      </div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                          <XAxis 
-                            dataKey="name" 
-                            tick={{ fontSize: 12, fill: '#64748b' }}
-                          />
-                          <YAxis 
-                            tick={{ fontSize: 12, fill: '#64748b' }}
-                          />
-                          <Tooltip 
-                            contentStyle={{
-                              backgroundColor: '#1e293b',
-                              border: '1px solid #475569',
-                              borderRadius: '8px',
-                              color: '#fff'
-                            }}
-                            formatter={(value) => `${value} votes`}
-                          />
-                          <Bar dataKey="votes" radius={[8, 8, 0, 0]}>
-                            {chartData.map((entry, index) => (
-                              <Cell 
-                                key={`cell-${index}`}
-                                fill={entry.isLeading ? '#f97316' : '#94a3b8'}
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
-                </Card>
-              </div>
-
-              {/* Results Summary */}
-              <div className="space-y-4">
-                {leadingCandidate && (
-                  <Card className="border-orange-200 dark:border-orange-800 dark:bg-slate-900 bg-orange-50">
-                    <div className="p-6">
-                      <p className="text-sm font-medium text-orange-800 dark:text-orange-300 mb-2">Leading</p>
-                      <h3 className="text-2xl font-bold text-orange-600 dark:text-orange-400 mb-2">
-                        {leadingCandidate.name}
-                      </h3>
-                      <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">
-                        {totalVotes > 0 ? ((leadingCandidate.vote_count / totalVotes) * 100).toFixed(1) : '0'}%
-                      </p>
-                      <p className="text-sm text-orange-700 dark:text-orange-300 mt-2">
-                        {leadingCandidate.vote_count} votes
-                      </p>
-                    </div>
-                  </Card>
-                )}
-
-                <Card className="dark:bg-slate-900">
-                  <div className="p-6">
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Total Votes</p>
-                    <p className="text-3xl font-bold dark:text-white">{totalVotes}</p>
-                  </div>
-                </Card>
-
-                <Card className="dark:bg-slate-900">
-                  <div className="p-6">
-                    <h4 className="font-semibold mb-4 dark:text-white">Vote Breakdown</h4>
-                    <div className="space-y-3">
-                      {chartData.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
-                              style={{
-                                backgroundColor: item.isLeading ? '#f97316' : '#94a3b8'
-                              }}
-                            />
-                            <span className="text-sm font-medium dark:text-white">
-                              {item.fullName.length > 12 ? item.fullName.substring(0, 12) + '...' : item.fullName}
-                            </span>
-                          </div>
-                          <span className="text-sm font-bold text-orange-600 dark:text-orange-400">
-                            {item.percentage}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            </div>
-          </div>
         ) : (
-          // Results Phase (after voting)
+          // Results Phase
           <div className="space-y-8">
             <Alert className="bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800">
               <CheckCircle2 className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               <AlertDescription className="text-orange-800 dark:text-orange-300">
-                Thank you for voting! Here are the current results.
+                {hasVoted ? 'Thank you for voting! Here are the current results.' : 'Here are the current voting results.'}
               </AlertDescription>
             </Alert>
 
@@ -341,7 +302,7 @@ export default function VotePage() {
               <div className="lg:col-span-2">
                 <Card className="dark:bg-slate-900">
                   <div className="p-6">
-                    <h3 className="text-xl font-bold mb-4 dark:text-white">Voting Results</h3>
+                    <h3 className="text-xl font-bold mb-4 dark:text-white">Voting Results (Live)</h3>
                     
                     {chartData.length === 0 || totalVotes === 0 ? (
                       <div className="text-center py-12">
@@ -435,6 +396,15 @@ export default function VotePage() {
                 </Card>
               </div>
             </div>
+
+            {hasVoted && (
+              <Button
+                onClick={() => router.push('/dashboard')}
+                className="w-full bg-orange-500 hover:bg-orange-600"
+              >
+                Back to Dashboard
+              </Button>
+            )}
           </div>
         )}
       </div>
