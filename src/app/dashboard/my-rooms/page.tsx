@@ -3,13 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-// import { DashboardLayout } from '@/components/dashboard/layout'
 import { RoomCard } from '@/components/dashboard/room-card'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { Button } from '@/components/ui/button'
 import { Plus, Vote, Loader2 } from 'lucide-react'
 import { VotingRoom } from '@/lib/types'
-// import { Toaster } from '@/components/ui/sonner'
 import { toast } from 'sonner'
 
 interface User {
@@ -23,7 +21,6 @@ export default function MyRoomsPage() {
   const [rooms, setRooms] = useState<VotingRoom[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const router = useRouter()
-  // const { toast } = Toaster()
 
   useEffect(() => {
     const checkUser = async (): Promise<void> => {
@@ -98,6 +95,29 @@ export default function MyRoomsPage() {
     }
   }
 
+  const handleDeactivate = async (room: VotingRoom): Promise<void> => {
+    if (!confirm(`Are you sure you want to deactivate "${room.title}"? Voting will be closed.`)) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('voting_rooms')
+        .update({ status: 'closed' })
+        .eq('id', room.id)
+
+      if (error) throw error
+
+      setRooms(rooms.map(r => 
+        r.id === room.id ? { ...r, status: 'closed' } : r
+      ))
+      toast.success('Room Deactivated Successfully')
+    } catch (error) {
+      console.error('Error deactivating room:', error)
+      toast.error('Failed to deactivate Room')
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -109,63 +129,160 @@ export default function MyRoomsPage() {
   if (!user) return null
 
   return (
-    // <DashboardLayout
-    //   userRole={user.role}
-    //   userName={user.email?.split('@')[0] || 'User'}
-    //   userEmail={user.email || ''}
-    // >
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-              My Voting Rooms
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              Manage your voting rooms and track participation
-            </p>
-          </div>
-          <Button
-            onClick={() => router.push('/dashboard/create-room')}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
-            disabled={rooms.length >= 3}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create Room
-          </Button>
-        </div>
-
-        {/* Room Limit Info */}
-        <div className="p-4 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg">
-          <p className="text-sm text-orange-800 dark:text-orange-200">
-            <strong>Room Limit:</strong> You have created {rooms.length} out of 3 maximum rooms.
-            {rooms.length >= 3 && ' Delete a room to create a new one.'}
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+            My Voting Rooms
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
+            Manage your voting rooms and track participation
           </p>
         </div>
-
-        {/* Rooms Grid */}
-        {rooms.length === 0 ? (
-          <EmptyState
-            icon={Vote}
-            title="No Voting Rooms Yet"
-            description="Create your first voting room to get started. You can create up to 3 rooms."
-            actionLabel="Create Your First Room"
-            onAction={() => router.push('/dashboard/create-room')}
-          />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                room={room}
-                onCopyLink={handleCopyLink}
-                onDelete={handleDelete}
-                onEdit={(room) => router.push(`/dashboard/rooms/${room.id}/edit`)}
-              />
-            ))}
-          </div>
-        )}
+        <Button
+          onClick={() => router.push('/dashboard/create-room')}
+          className="bg-orange-500 hover:bg-orange-600 text-white"
+          disabled={rooms.length >= 3}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Create Room
+        </Button>
       </div>
-    // </DashboardLayout>
+
+      {/* Room Limit Info */}
+      <div className="p-4 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg">
+        <p className="text-sm text-orange-800 dark:text-orange-200">
+          <strong>Room Limit:</strong> You have created {rooms.length} out of 3 maximum rooms.
+          {rooms.length >= 3 && ' Delete a room to create a new one.'}
+        </p>
+      </div>
+
+      {/* Rooms Grid */}
+      {rooms.length === 0 ? (
+        <EmptyState
+          icon={Vote}
+          title="No Voting Rooms Yet"
+          description="Create your first voting room to get started. You can create up to 3 rooms."
+          actionLabel="Create Your First Room"
+          onAction={() => router.push('/dashboard/create-room')}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {rooms.map((room) => (
+            <RoomCardWithDeactivate
+              key={room.id}
+              room={room}
+              onCopyLink={handleCopyLink}
+              onDelete={handleDelete}
+              onDeactivate={handleDeactivate}
+              onEdit={(room) => router.push(`/dashboard/rooms/${room.id}/edit`)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Component untuk menampilkan room dengan tombol deactivate
+function RoomCardWithDeactivate({
+  room,
+  onCopyLink,
+  onDelete,
+  onDeactivate,
+  onEdit
+}: {
+  room: VotingRoom
+  onCopyLink: (roomId: string) => void
+  onDelete: (room: VotingRoom) => void
+  onDeactivate: (room: VotingRoom) => void
+  onEdit: (room: VotingRoom) => void
+}) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow">
+      <div className="p-6 space-y-4">
+        {/* Room Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                {room.title}
+              </h3>
+              <span
+                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                  room.status === 'active'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                }`}
+              >
+                {room.status}
+              </span>
+            </div>
+            {room.description && (
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {room.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Room Stats */}
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Created</p>
+            <p className="text-sm font-medium text-slate-900 dark:text-white">
+              {new Date(room.created_at).toLocaleDateString('id-ID')}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Status</p>
+            <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
+              {room.status}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="grid grid-cols-2 gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onCopyLink(room.id)}
+            className="dark:border-slate-600 dark:text-white"
+          >
+            Copy Link
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onEdit(room)}
+            className="dark:border-slate-600 dark:text-white"
+          >
+            Edit
+          </Button>
+          
+          {room.status === 'active' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onDeactivate(room)}
+              className="col-span-2 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950"
+            >
+              Deactivate Room
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onDelete(room)}
+            className="col-span-2 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
