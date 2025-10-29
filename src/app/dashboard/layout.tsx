@@ -23,34 +23,91 @@ export default function DashboardRootLayout({ children }: { children: ReactNode 
 
   useEffect(() => {
     const checkUser = async (): Promise<void> => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (!authUser) {
+      try {
+        // Small delay untuk ensure localStorage ready
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Check token dari localStorage (email/password login)
+        const token = localStorage.getItem('authToken')
+        const userId = localStorage.getItem('userId')
+        const userEmail = localStorage.getItem('userEmail')
+        const userRole = localStorage.getItem('userRole')
+
+        console.log('Auth check:', { 
+          hasToken: !!token, 
+          hasUserId: !!userId, 
+          hasEmail: !!userEmail,
+          userEmail 
+        })
+
+        if (token && userId && userEmail) {
+          // User dari localStorage (email/password)
+          console.log('Using localStorage auth for:', userEmail)
+          setUser({
+            id: userId,
+            email: userEmail,
+            role: (userRole as 'admin' | 'member') || 'member',
+          })
+          setLoading(false)
+          return
+        }
+
+        console.log('No localStorage auth, checking Supabase...')
+
+        // Check Supabase auth (OAuth)
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+        
+        console.log('Supabase auth check:', { authUser: !!authUser, error: authError?.message })
+
+        if (!authUser) {
+          console.log('No auth found, redirecting to login')
+          setLoading(false)
+          router.push('/auth/login')
+          return
+        }
+
+        // Get user dari database
+        const { data: userData, error: dbError } = await supabase
+          .from('users')
+          .select('id, email, role')
+          .eq('id', authUser.id)
+          .single()
+
+        console.log('Database check:', { userData: !!userData, error: dbError?.message })
+
+        if (dbError || !userData) {
+          console.error('Error fetching user:', dbError)
+          setLoading(false)
+          router.push('/auth/login')
+          return
+        }
+
+        setUser({
+          id: userData.id,
+          email: userData.email,
+          role: userData.role || 'member',
+        })
+        setLoading(false)
+      } catch (error) {
+        console.error('Check user error:', error)
+        setLoading(false)
         router.push('/auth/login')
-        return
       }
-
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-
-      if (error || !userData) {
-        console.error('Error fetching user:', error)
-        router.push('/auth/login')
-        return
-      }
-
-      setUser(userData)
-      setLoading(false)
     }
 
     checkUser()
 
-    // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    // Subscribe to auth changes (untuk OAuth)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event)
       if (event === 'SIGNED_OUT') {
+        // Clear localStorage juga
+        localStorage.removeItem('authToken')
+        localStorage.removeItem('userId')
+        localStorage.removeItem('userEmail')
+        localStorage.removeItem('userName')
+        localStorage.removeItem('userRole')
+        setUser(null)
         router.push('/auth/login')
       }
     })

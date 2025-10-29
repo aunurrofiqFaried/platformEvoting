@@ -16,6 +16,7 @@ import { Loader2, AlertCircle, Shield, Bell, Moon, Sun } from 'lucide-react'
 // import { Toaster } from '@/components/ui/sonner'
 import { toast } from 'sonner'
 import { useTheme } from 'next-themes'
+import bcrypt from 'bcryptjs'
 
 interface User {
   id: string
@@ -34,6 +35,8 @@ export default function SettingsPage() {
   const [voteNotifications, setVoteNotifications] = useState<boolean>(true)
   const [newPassword, setNewPassword] = useState<string>('')
   const [confirmPassword, setConfirmPassword] = useState<string>('')
+  const [currentPassword, setCurrentPassword] = useState<string>('')
+  const [isOAuthUser, setIsOAuthUser] = useState<boolean>(false)
 
   const router = useRouter()
   // const { toast } = useToast()
@@ -41,26 +44,60 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const checkUser = async (): Promise<void> => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (!authUser) {
+      try {
+        // Small delay untuk ensure localStorage ready
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Check dari localStorage dulu (email/password)
+        const userId = localStorage.getItem('userId')
+        const userEmail = localStorage.getItem('userEmail')
+        const userRole = localStorage.getItem('userRole')
+        const createdAt = localStorage.getItem('userCreatedAt')
+
+        if (userId && userEmail) {
+          setUser({
+            id: userId,
+            email: userEmail,
+            role: (userRole as 'admin' | 'member') || 'member',
+            created_at: createdAt || new Date().toISOString(),
+          })
+          setIsOAuthUser(false)
+          setLoading(false)
+          return
+        }
+
+        // Fallback ke Supabase Auth (OAuth)
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        
+        if (!authUser) {
+          router.push('/auth/login')
+          return
+        }
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+
+        if (!userData) {
+          router.push('/auth/login')
+          return
+        }
+
+        setUser({
+          id: userData.id,
+          email: userData.email,
+          role: userData.role || 'member',
+          created_at: userData.created_at,
+        })
+        setIsOAuthUser(true)
+        setLoading(false)
+      } catch (error) {
+        console.error('Check user error:', error)
+        setLoading(false)
         router.push('/auth/login')
-        return
       }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-
-      if (!userData) {
-        router.push('/auth/login')
-        return
-      }
-
-      setUser(userData)
-      setLoading(false)
     }
 
     checkUser()
@@ -68,7 +105,7 @@ export default function SettingsPage() {
 
   const handlePasswordChange = async (): Promise<void> => {
     if (!newPassword || !confirmPassword) {
-      toast.error('Please fill in all password filds')
+      toast.error('Please fill in all password fields')
       return
     }
 
@@ -85,14 +122,38 @@ export default function SettingsPage() {
     setSaving(true)
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      })
+      if (isOAuthUser) {
+        // For OAuth users, update via Supabase Auth
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        })
 
-      if (error) throw error
+        if (error) throw error
+      } else {
+        // For email/password users, update via API
+        const hashedPassword = await bcrypt.hash(newPassword, 10)
+
+        const response = await fetch('/api/auth/update-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user!.id,
+            newPassword: newPassword,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update password')
+        }
+      }
 
       setNewPassword('')
       setConfirmPassword('')
+      setCurrentPassword('')
 
       toast.success('Password Updated Successfully')
     } catch (error) {
@@ -126,8 +187,16 @@ export default function SettingsPage() {
 
       if (error) throw error
 
-      // Sign out
+      // Sign out dari Supabase (untuk OAuth users)
       await supabase.auth.signOut()
+
+      // Clear localStorage (untuk email/password users)
+      localStorage.removeItem('authToken')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('userEmail')
+      localStorage.removeItem('userName')
+      localStorage.removeItem('userRole')
+      localStorage.removeItem('userCreatedAt')
       
       toast.warning('Account deleted successfully')
 
@@ -215,6 +284,15 @@ export default function SettingsPage() {
               {accountCreatedDate}
             </p>
           </SettingsItem>
+
+          <SettingsItem
+            label="Login Method"
+            description="How you authenticate with this account"
+          >
+            <Badge variant={isOAuthUser ? 'default' : 'secondary'} className="w-fit">
+              {isOAuthUser ? 'OAuth' : 'Email & Password'}
+            </Badge>
+          </SettingsItem>
         </SettingsSection>
 
         {/* Security Section */}
@@ -229,44 +307,57 @@ export default function SettingsPage() {
             </AlertDescription>
           </Alert>
 
-          <SettingsItem
-            label="New Password"
-            description="Must be at least 6 characters"
-            htmlFor="new-password"
-          >
-            <Input
-              id="new-password"
-              type="password"
-              placeholder="Enter new password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              disabled={saving}
-            />
-          </SettingsItem>
+          {!isOAuthUser && (
+            <>
+              <SettingsItem
+                label="New Password"
+                description="Must be at least 6 characters"
+                htmlFor="new-password"
+              >
+                <Input
+                  id="new-password"
+                  type="password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={saving}
+                />
+              </SettingsItem>
 
-          <SettingsItem
-            label="Confirm New Password"
-            description="Re-enter your new password"
-            htmlFor="confirm-password"
-          >
-            <Input
-              id="confirm-password"
-              type="password"
-              placeholder="Confirm new password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={saving}
-            />
-          </SettingsItem>
+              <SettingsItem
+                label="Confirm New Password"
+                description="Re-enter your new password"
+                htmlFor="confirm-password"
+              >
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={saving}
+                />
+              </SettingsItem>
 
-          <Button
-            onClick={handlePasswordChange}
-            disabled={saving || !newPassword || !confirmPassword}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
-          >
-            {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {saving ? 'Updating...' : 'Update Password'}
-          </Button>
+              <Button
+                onClick={handlePasswordChange}
+                disabled={saving || !newPassword || !confirmPassword}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {saving ? 'Updating...' : 'Update Password'}
+              </Button>
+            </>
+          )}
+
+          {isOAuthUser && (
+            <Alert className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+              <AlertCircle className="w-4 h-4 text-blue-600" />
+              <AlertDescription className="text-blue-800 dark:text-blue-200">
+                Youre using OAuth login. To change your password, use your OAuth providers settings.
+              </AlertDescription>
+            </Alert>
+          )}
         </SettingsSection>
 
         {/* Appearance Section */}

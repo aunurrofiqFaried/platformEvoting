@@ -43,34 +43,71 @@ export default function CreateRoomPage() {
 
   useEffect(() => {
     const checkUser = async (): Promise<void> => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (!authUser) {
+      try {
+        // Small delay untuk ensure localStorage ready
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Check dari localStorage dulu (email/password)
+        const userId = localStorage.getItem('userId')
+        const userEmail = localStorage.getItem('userEmail')
+        const userRole = localStorage.getItem('userRole')
+
+        if (userId && userEmail) {
+          setUser({
+            id: userId,
+            email: userEmail,
+            role: (userRole as 'admin' | 'member') || 'member',
+          })
+          
+          // Check room count
+          const { data: rooms } = await supabase
+            .from('voting_rooms')
+            .select('id')
+            .eq('created_by', userId)
+
+          setRoomCount(rooms?.length || 0)
+          setLoading(false)
+          return
+        }
+
+        // Fallback ke Supabase Auth (OAuth)
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        
+        if (!authUser) {
+          router.push('/auth/login')
+          return
+        }
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+
+        if (!userData) {
+          router.push('/auth/login')
+          return
+        }
+
+        setUser({
+          id: userData.id,
+          email: userData.email,
+          role: userData.role || 'member',
+        })
+
+        // Check room count
+        const { data: rooms } = await supabase
+          .from('voting_rooms')
+          .select('id')
+          .eq('created_by', userData.id)
+
+        setRoomCount(rooms?.length || 0)
+        setLoading(false)
+      } catch (error) {
+        console.error('Check user error:', error)
+        setLoading(false)
         router.push('/auth/login')
-        return
       }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-
-      if (!userData) {
-        router.push('/auth/login')
-        return
-      }
-
-      setUser(userData)
-
-      // Check room count
-      const { data: rooms } = await supabase
-        .from('voting_rooms')
-        .select('id')
-        .eq('created_by', userData.id)
-
-      setRoomCount(rooms?.length || 0)
-      setLoading(false)
     }
 
     checkUser()

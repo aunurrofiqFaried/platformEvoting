@@ -8,9 +8,11 @@ import { StatsCard } from '@/components/dashboard/stat-card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 // import { Badge } from '@/components/ui/badge'
-import { Vote, Search, Loader2, Filter } from 'lucide-react'
+import { Vote, Search, Loader2, Filter, ChevronLeft, ChevronRight } from 'lucide-react'
 import { VotingRoom } from '@/lib/types'
 import { toast } from 'sonner'
+
+const ITEMS_PER_PAGE = 12 // 3 columns x 4 rows
 
 export default function AllRoomsPage() {
   const [rooms, setRooms] = useState<VotingRoom[]>([])
@@ -18,6 +20,7 @@ export default function AllRoomsPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'closed'>('all')
+  const [currentPage, setCurrentPage] = useState<number>(1)
   // const { toast } = useToast()
 
   useEffect(() => {
@@ -41,6 +44,8 @@ export default function AllRoomsPage() {
     }
 
     setFilteredRooms(filtered)
+    // Reset to page 1 when filters change
+    setCurrentPage(1)
   }, [searchQuery, filterStatus, rooms])
 
   const loadRooms = async (): Promise<void> => {
@@ -111,8 +116,15 @@ export default function AllRoomsPage() {
     }
   }
 
-  // Calculate stats
+  // Calculate pagination
   const totalRooms = rooms.length
+  const filteredTotal = filteredRooms.length
+  const totalPages = Math.ceil(filteredTotal / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedRooms = filteredRooms.slice(startIndex, endIndex)
+
+  // Calculate stats
   const activeRooms = rooms.filter(r => r.status === 'active').length
   const closedRooms = rooms.filter(r => r.status === 'closed').length
 
@@ -161,7 +173,7 @@ export default function AllRoomsPage() {
             placeholder="Search rooms..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-10 dark:bg-slate-800 dark:border-slate-700"
           />
         </div>
         <div className="flex gap-2">
@@ -169,7 +181,7 @@ export default function AllRoomsPage() {
             variant={filterStatus === 'all' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('all')}
-            className={filterStatus === 'all' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+            className={filterStatus === 'all' ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'dark:border-slate-600 dark:text-white'}
           >
             All
           </Button>
@@ -177,7 +189,7 @@ export default function AllRoomsPage() {
             variant={filterStatus === 'active' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('active')}
-            className={filterStatus === 'active' ? 'bg-green-500 hover:bg-green-600' : ''}
+            className={filterStatus === 'active' ? 'bg-green-500 hover:bg-green-600 text-white' : 'dark:border-slate-600 dark:text-white'}
           >
             Active
           </Button>
@@ -185,7 +197,7 @@ export default function AllRoomsPage() {
             variant={filterStatus === 'closed' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('closed')}
-            className={filterStatus === 'closed' ? 'bg-slate-500 hover:bg-slate-600' : ''}
+            className={filterStatus === 'closed' ? 'bg-slate-500 hover:bg-slate-600 text-white' : 'dark:border-slate-600 dark:text-white'}
           >
             Closed
           </Button>
@@ -208,15 +220,107 @@ export default function AllRoomsPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRooms.map((room) => (
-            <RoomCard
-              key={room.id}
-              room={room}
-              onCopyLink={handleCopyLink}
-              onDelete={handleDelete}
-            />
-          ))}
+        <div className="space-y-6">
+          {/* Rooms Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {paginatedRooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                onCopyLink={handleCopyLink}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+              {/* Info Text */}
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                Showing <span className="font-semibold">{Math.min(startIndex + 1, filteredTotal)}-{Math.min(endIndex, filteredTotal)}</span> of <span className="font-semibold">{filteredTotal}</span> rooms
+              </div>
+
+              {/* Navigation Buttons */}
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 dark:border-slate-600 dark:text-white"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="hidden sm:inline">Previous</span>
+                </Button>
+
+                {/* Page Indicators */}
+                <div className="flex items-center gap-1">
+                  {totalPages <= 5 ? (
+                    // Show all page numbers if 5 or fewer pages
+                    Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                      <Button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        variant={currentPage === page ? 'default' : 'outline'}
+                        size="sm"
+                        className={
+                          currentPage === page
+                            ? 'bg-orange-500 hover:bg-orange-600 text-white w-10 h-10'
+                            : 'dark:border-slate-600 dark:text-white dark:hover:bg-slate-700 w-10 h-10'
+                        }
+                      >
+                        {page}
+                      </Button>
+                    ))
+                  ) : (
+                    // Show abbreviated page numbers if more than 5 pages
+                    <>
+                      {[1, currentPage > 3 ? '...' : null, currentPage - 1, currentPage, currentPage + 1, currentPage < totalPages - 2 ? '...' : null, totalPages]
+                        .filter((page, index, arr) => page !== null && arr.indexOf(page) === index)
+                        .map((page, idx) => (
+                          typeof page === 'string' ? (
+                            <span key={`ellipsis-${idx}`} className="px-2 text-slate-600 dark:text-slate-400">
+                              {page}
+                            </span>
+                          ) : (
+                            <Button
+                              key={page}
+                              onClick={() => setCurrentPage(page as number)}
+                              variant={currentPage === page ? 'default' : 'outline'}
+                              size="sm"
+                              className={
+                                currentPage === page
+                                  ? 'bg-orange-500 hover:bg-orange-600 text-white w-10 h-10'
+                                  : 'dark:border-slate-600 dark:text-white dark:hover:bg-slate-700 w-10 h-10'
+                              }
+                            >
+                              {page}
+                            </Button>
+                          )
+                        ))}
+                    </>
+                  )}
+                </div>
+
+                <Button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 dark:border-slate-600 dark:text-white"
+                >
+                  <span className="hidden sm:inline">Next</span>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Page Counter */}
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

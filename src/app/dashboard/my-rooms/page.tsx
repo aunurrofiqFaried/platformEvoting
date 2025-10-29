@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Plus, Vote, Loader2, Copy, Edit, Eye, AlertTriangle, Trash2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Vote, Loader2, Search, Copy, Edit, Trash2, AlertTriangle, Plus } from 'lucide-react'
 import { VotingRoom } from '@/lib/types'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -26,7 +27,10 @@ interface ConfirmState {
 export default function MyRoomsPage() {
   const [user, setUser] = useState<User | null>(null)
   const [rooms, setRooms] = useState<VotingRoom[]>([])
+  const [filteredRooms, setFilteredRooms] = useState<VotingRoom[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'closed'>('all')
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState>({
     isOpen: false,
     action: null,
@@ -37,30 +41,78 @@ export default function MyRoomsPage() {
 
   useEffect(() => {
     const checkUser = async (): Promise<void> => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (!authUser) {
+      try {
+        // Small delay untuk ensure localStorage ready
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Check dari localStorage dulu (email/password)
+        const userId = localStorage.getItem('userId')
+        const userEmail = localStorage.getItem('userEmail')
+        const userRole = localStorage.getItem('userRole')
+
+        if (userId && userEmail) {
+          setUser({
+            id: userId,
+            email: userEmail,
+            role: (userRole as 'admin' | 'member') || 'member',
+          })
+          await loadRooms(userId)
+          return
+        }
+
+        // Fallback ke Supabase Auth (OAuth)
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        
+        if (!authUser) {
+          router.push('/auth/login')
+          return
+        }
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+
+        if (!userData) {
+          router.push('/auth/login')
+          return
+        }
+
+        setUser({
+          id: userData.id,
+          email: userData.email,
+          role: userData.role || 'member',
+        })
+        await loadRooms(userData.id)
+      } catch (error) {
+        console.error('Check user error:', error)
+        setLoading(false)
         router.push('/auth/login')
-        return
       }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-
-      if (!userData) {
-        router.push('/auth/login')
-        return
-      }
-
-      setUser(userData)
-      await loadRooms(userData.id)
     }
 
     checkUser()
   }, [router])
+
+  useEffect(() => {
+    let filtered = rooms
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(room =>
+        room.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        room.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    }
+
+    // Filter by status
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(room => room.status === filterStatus)
+    }
+
+    setFilteredRooms(filtered)
+  }, [searchQuery, filterStatus, rooms])
 
   const loadRooms = async (userId: string): Promise<void> => {
     try {
@@ -73,6 +125,7 @@ export default function MyRoomsPage() {
       if (error) throw error
 
       setRooms(data || [])
+      setFilteredRooms(data || [])
     } catch (error) {
       console.error('Error loading rooms:', error)
       toast.error('Failed to load voting Rooms')
@@ -125,6 +178,7 @@ export default function MyRoomsPage() {
           .from('voting_rooms')
           .delete()
           .eq('id', confirmDialog.room.id)
+          .eq('created_by', user?.id)
 
         if (error) throw error
 
@@ -135,6 +189,7 @@ export default function MyRoomsPage() {
           .from('voting_rooms')
           .update({ status: 'closed' })
           .eq('id', confirmDialog.room.id)
+          .eq('created_by', user?.id)
 
         if (error) throw error
 
@@ -187,7 +242,7 @@ export default function MyRoomsPage() {
         </Button>
       </div>
 
-      {/* Room Limit Info */}
+      {/* Room Limit Alert */}
       <div className="p-4 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg">
         <p className="text-sm text-orange-800 dark:text-orange-200">
           <strong>Room Limit:</strong> You have created {rooms.length} out of 3 maximum rooms.
@@ -195,26 +250,69 @@ export default function MyRoomsPage() {
         </p>
       </div>
 
+      {/* Filters */}
+      {rooms.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search rooms..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 dark:bg-slate-900 dark:border-slate-800"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={filterStatus === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterStatus('all')}
+              className={filterStatus === 'all' ? 'bg-orange-500 hover:bg-orange-600' : 'dark:border-slate-700 dark:text-white'}
+            >
+              All
+            </Button>
+            <Button
+              variant={filterStatus === 'active' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterStatus('active')}
+              className={filterStatus === 'active' ? 'bg-green-500 hover:bg-green-600' : 'dark:border-slate-700 dark:text-white'}
+            >
+              Active
+            </Button>
+            <Button
+              variant={filterStatus === 'closed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterStatus('closed')}
+              className={filterStatus === 'closed' ? 'bg-slate-500 hover:bg-slate-600' : 'dark:border-slate-700 dark:text-white'}
+            >
+              Closed
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Rooms Grid */}
-      {rooms.length === 0 ? (
+      {filteredRooms.length === 0 ? (
         <EmptyState
           icon={Vote}
-          title="No Voting Rooms Yet"
-          description="Create your first voting room to get started. You can create up to 3 rooms."
-          actionLabel="Create Your First Room"
-          onAction={() => router.push('/dashboard/create-room')}
+          title={rooms.length === 0 ? "No Voting Rooms Yet" : "No Rooms Found"}
+          description={
+            rooms.length === 0
+              ? "Create your first voting room to get started."
+              : 'Try adjusting your search or filter criteria'
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {rooms.map((room) => (
+          {filteredRooms.map((room) => (
             <RoomCard
               key={room.id}
               room={room}
               onCopyLink={handleCopyLink}
               onDelete={openDeleteDialog}
               onDeactivate={openDeactivateDialog}
-              onEdit={(room) => router.push(`/dashboard/create-room?edit=${room.id}`)}
-              onDetails={(roomId) => router.push(`/dashboard/my-rooms/${roomId}/detail`)}
+              onEdit={(room) => router.push(`/dashboard/rooms/${room.id}/edit`)}
+              onDetails={(roomId) => router.push(`/dashboard/rooms/${roomId}?from=my-rooms`)}
             />
           ))}
         </div>
@@ -261,7 +359,9 @@ function RoomCard({
   onDetails: (roomId: string) => void
 }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow">
+    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+      onClick={() => onDetails(room.id)}
+    >
       <div className="p-6 space-y-4">
         {/* Room Header */}
         <div className="flex items-start justify-between gap-2">
@@ -305,7 +405,9 @@ function RoomCard({
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 flex-wrap">
+        <div className="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 flex-wrap"
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Copy Link */}
           <Button
             variant="ghost"
@@ -326,17 +428,6 @@ function RoomCard({
             title="Edit room"
           >
             <Edit className="w-4 h-4" />
-          </Button>
-
-          {/* Details */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDetails(room.id)}
-            className="dark:text-white dark:hover:bg-slate-800"
-            title="View details"
-          >
-            <Eye className="w-4 h-4" />
           </Button>
 
           {/* Deactivate */}

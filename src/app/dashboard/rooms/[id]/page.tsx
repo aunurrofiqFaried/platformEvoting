@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { ArrowLeft, Copy, Share2, Trophy, Loader2, Calendar, User } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ArrowLeft, Copy, Share2, Trophy, Loader2, Calendar, User, AlertCircle } from 'lucide-react'
 // import { useToast } from '@/components/ui/use-toast'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -44,6 +45,7 @@ export default function RoomDetailPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [totalVotes, setTotalVotes] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadRoomDetails()
@@ -51,32 +53,60 @@ export default function RoomDetailPage() {
 
   const loadRoomDetails = async (): Promise<void> => {
     try {
-      // 1. Load room data
+      setError(null)
+      console.log('Loading room details for:', roomId)
+
+      // 1. Load room data - simple query tanpa JOIN dulu
       const { data: roomData, error: roomError } = await supabase
         .from('voting_rooms')
-        .select('*, users(email)')
+        .select('id, title, description, status, created_at, created_by')
         .eq('id', roomId)
         .single()
 
-      if (roomError) throw roomError
-      setRoom(roomData)
+      if (roomError) {
+        console.error('Room query error:', roomError)
+        throw new Error(`Room not found: ${roomError.message}`)
+      }
+
+      console.log('Room loaded:', roomData)
+      setRoom(roomData as Room)
 
       // 2. Load candidates
       const { data: candidatesData, error: candidatesError } = await supabase
         .from('candidates')
         .select('*')
         .eq('room_id', roomId)
-        .order('vote_count', { ascending: false })
+        .order('created_at', { ascending: true })
 
-      if (candidatesError) throw candidatesError
+      if (candidatesError) {
+        console.error('Candidates query error:', candidatesError)
+        throw new Error(`Failed to load candidates: ${candidatesError.message}`)
+      }
+
+      console.log('Candidates loaded:', candidatesData?.length)
+
+      if (!candidatesData || candidatesData.length === 0) {
+        setCandidates([])
+        setTotalVotes(0)
+        setLoading(false)
+        return
+      }
 
       // 3. Hitung vote count untuk setiap candidate dari table votes
       const candidatesWithVotes = await Promise.all(
         (candidatesData || []).map(async (candidate) => {
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from('votes')
             .select('id', { count: 'exact', head: true })
             .eq('candidate_id', candidate.id)
+
+          if (countError) {
+            console.error('Vote count error for candidate', candidate.id, countError)
+            return {
+              ...candidate,
+              vote_count: 0
+            }
+          }
 
           return {
             ...candidate,
@@ -88,16 +118,19 @@ export default function RoomDetailPage() {
       // Sort by vote_count descending
       candidatesWithVotes.sort((a, b) => b.vote_count - a.vote_count)
 
+      console.log('Candidates with votes:', candidatesWithVotes)
       setCandidates(candidatesWithVotes)
 
       // 4. Hitung total votes
       const total = candidatesWithVotes.reduce((sum, c) => sum + c.vote_count, 0)
+      console.log('Total votes:', total)
       setTotalVotes(total)
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load room details'
       console.error('Error loading room details:', error)
-      toast.error('Failed to load room details')
-      router.push('/dashboard')
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -123,7 +156,25 @@ export default function RoomDetailPage() {
     )
   }
 
-  if (!room) return null
+  if (error || !room) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-4">
+        {/* <Link href="/dashboard/my-rooms">
+          <Button variant="ghost" className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to My Rooms
+          </Button>
+        </Link> */}
+        
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {error || 'Room not found'}
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
 
   // Cari winner (candidate dengan vote terbanyak)
   const winner = candidates.length > 0 ? candidates[0] : null
@@ -131,19 +182,19 @@ export default function RoomDetailPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Back Button */}
-      <Link href="/dashboard/rooms">
+      {/* <Link href="/dashboard/my-rooms">
         <Button variant="ghost" className="gap-2">
           <ArrowLeft className="w-4 h-4" />
-          Back to Rooms
+          Back to My Rooms
         </Button>
-      </Link>
+      </Link> */}
 
       {/* Room Header */}
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center gap-3 flex-wrap">
                 <CardTitle className="text-2xl">{room.title}</CardTitle>
                 <Badge variant={room.status === 'active' ? 'default' : 'secondary'}>
                   {room.status}
@@ -168,12 +219,10 @@ export default function RoomDetailPage() {
               <Calendar className="w-4 h-4" />
               <span>Created {new Date(room.created_at).toLocaleDateString('id-ID')}</span>
             </div>
-            {room.users?.email && (
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4" />
-                <span>By {room.users.email}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4" />
+              <span>Creator ID: {room.created_by.substring(0, 8)}...</span>
+            </div>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
             <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -197,9 +246,9 @@ export default function RoomDetailPage() {
       </Card>
 
       {/* Voting Results */}
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card className="border-slate-200 dark:border-slate-800 dark:bg-slate-900">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between flex-wrap gap-2">
             <span>Voting Results</span>
             <span className="text-base font-normal text-slate-600 dark:text-slate-400">
               {totalVotes} total votes
@@ -219,16 +268,16 @@ export default function RoomDetailPage() {
               return (
                 <div
                   key={candidate.id}
-                  className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3"
+                  className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3 dark:bg-slate-800/50"
                 >
                   <div className="flex items-start gap-4">
                     {/* Candidate Image/Avatar */}
-                    <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-2xl font-bold shrink-0">
+                    <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-2xl font-bold shrink-0 overflow-hidden">
                       {candidate.image_url ? (
                         <img
                           src={candidate.image_url}
                           alt={candidate.name}
-                          className="w-full h-full object-cover rounded-lg"
+                          className="w-full h-full object-cover"
                         />
                       ) : (
                         candidate.name.charAt(0).toUpperCase()
@@ -237,16 +286,16 @@ export default function RoomDetailPage() {
 
                     {/* Candidate Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                           {candidate.name}
                         </h3>
                         {isWinner && (
-                          <Trophy className="w-5 h-5 text-yellow-500" />
+                          <Trophy className="w-5 h-5 text-yellow-500 shrink-0" />
                         )}
                       </div>
                       {candidate.description && (
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
                           {candidate.description}
                         </p>
                       )}

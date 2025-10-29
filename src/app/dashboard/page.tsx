@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatsCard } from '@/components/dashboard/stat-card'
-import { Users, Vote, BarChart3, TrendingUp, Loader2 } from 'lucide-react'
+import { Users, Vote, BarChart3, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface DashboardStats {
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   const [votingActivityData, setVotingActivityData] = useState<VoteData[]>([])
   const [roomStatusData, setRoomStatusData] = useState<RoomStatusData[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadDashboardData()
@@ -65,115 +67,177 @@ export default function DashboardPage() {
 
   const loadDashboardData = async (): Promise<void> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      setError(null)
+      
+      // Small delay untuk ensure localStorage ready
+      await new Promise(resolve => setTimeout(resolve, 50))
 
-      setUserId(user.id)
+      // Check dari localStorage dulu (email/password)
+      let currentUserId = localStorage.getItem('userId')
+      let currentUserRole = localStorage.getItem('userRole') as 'admin' | 'member' | null
 
-      // Get user role
-      const { data: userData } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+      console.log('Dashboard auth check:', { 
+        hasLocalStorageAuth: !!currentUserId,
+        userRole: currentUserRole 
+      })
 
-      if (userData) {
-        setUserRole(userData.role)
+      // Fallback ke Supabase Auth jika tidak ada di localStorage
+      if (!currentUserId || !currentUserRole) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          console.log('No user found')
+          setLoading(false)
+          return
+        }
 
-        if (userData.role === 'admin') {
-          // ADMIN: Load all stats
-          const [membersResult, roomsResult, activeRoomsResult, votesResult] = await Promise.all([
-            supabase.from('users').select('id', { count: 'exact', head: true }),
-            supabase.from('voting_rooms').select('id', { count: 'exact', head: true }),
-            supabase.from('voting_rooms').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-            supabase.from('votes').select('id', { count: 'exact', head: true }),
-          ])
+        currentUserId = user.id
+        setUserId(user.id)
 
-          setStats({
-            totalMembers: membersResult.count || 0,
-            totalRooms: roomsResult.count || 0,
-            activeRooms: activeRoomsResult.count || 0,
-            totalVotes: votesResult.count || 0,
-          })
+        // Get user role dari database
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
 
-          // Load recent rooms (all)
-          const { data: rooms } = await supabase
-            .from('voting_rooms')
-            .select('*, users(email)')
-            .order('created_at', { ascending: false })
-            .limit(5)
+        if (userData) {
+          currentUserRole = userData.role
+          setUserRole(userData.role)
+        }
+      } else {
+        setUserId(currentUserId)
+        setUserRole(currentUserRole)
+      }
 
-          setRecentRooms(rooms || [])
+      console.log('Loading dashboard for:', { currentUserId, currentUserRole })
 
-          // Load voting activity (votes per day for last 7 days)
-          const { data: allVotes } = await supabase
-            .from('votes')
-            .select('created_at')
-            .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-            .order('created_at', { ascending: true })
+      if (currentUserRole === 'admin') {
+        // ADMIN: Load all stats
+        console.log('Loading admin stats...')
+        const [membersResult, roomsResult, activeRoomsResult, votesResult] = await Promise.all([
+          supabase.from('users').select('id', { count: 'exact', head: true }),
+          supabase.from('voting_rooms').select('id', { count: 'exact', head: true }),
+          supabase.from('voting_rooms').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+          supabase.from('votes').select('id', { count: 'exact', head: true }),
+        ])
 
-          // Group votes by date
-          const votesPerDay: { [key: string]: number } = {}
-          allVotes?.forEach((vote) => {
-            const date = new Date(vote.created_at).toLocaleDateString('id-ID', {
-              month: 'short',
-              day: 'numeric'
-            })
-            votesPerDay[date] = (votesPerDay[date] || 0) + 1
-          })
+        console.log('Admin stats:', {
+          totalMembers: membersResult.count,
+          totalRooms: roomsResult.count,
+          activeRooms: activeRoomsResult.count,
+          totalVotes: votesResult.count,
+        })
 
-          const chartData = Object.entries(votesPerDay).map(([date, votes]) => ({
-            date,
-            votes
-          }))
-          setVotingActivityData(chartData)
+        setStats({
+          totalMembers: membersResult.count || 0,
+          totalRooms: roomsResult.count || 0,
+          activeRooms: activeRoomsResult.count || 0,
+          totalVotes: votesResult.count || 0,
+        })
 
-          // Load room status
-          const closedCount = (roomsResult.count || 0) - (activeRoomsResult.count || 0)
-          setRoomStatusData([
-            { name: 'Active', value: activeRoomsResult.count || 0 },
-            { name: 'Closed', value: closedCount }
-          ])
+        // Load recent rooms - SIMPLE QUERY tanpa JOIN
+        const { data: rooms, error: roomsError } = await supabase
+          .from('voting_rooms')
+          .select('id, title, description, created_by, status, created_at, updated_at')
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (roomsError) {
+          console.error('Error loading admin rooms:', roomsError)
+          setError(`Cannot load rooms: ${roomsError.message}`)
         } else {
-          // MEMBER: Load only personal stats
-          const [myRoomsResult, activeMyRoomsResult, myVotesResult] = await Promise.all([
-            supabase
-              .from('voting_rooms')
-              .select('id', { count: 'exact', head: true })
-              .eq('created_by', user.id),
-            supabase
-              .from('voting_rooms')
-              .select('id', { count: 'exact', head: true })
-              .eq('created_by', user.id)
-              .eq('status', 'active'),
-            supabase
-              .from('votes')
-              .select('id', { count: 'exact', head: true })
-              .eq('user_id', user.id),
-          ])
+          console.log('Admin recent rooms:', rooms?.length)
+          setRecentRooms((rooms?.map(r => ({ ...r, users: null })) as RecentRoom[]) || [])
+        }
 
-          setStats({
-            totalMembers: 0,
-            totalRooms: myRoomsResult.count || 0,
-            activeRooms: activeMyRoomsResult.count || 0,
-            totalVotes: myVotesResult.count || 0,
-            myRooms: myRoomsResult.count || 0,
-            myVotes: myVotesResult.count || 0,
+        // Load voting activity (votes per day for last 7 days)
+        const { data: allVotes } = await supabase
+          .from('votes')
+          .select('created_at')
+          .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: true })
+
+        // Group votes by date
+        const votesPerDay: { [key: string]: number } = {}
+        allVotes?.forEach((vote) => {
+          const date = new Date(vote.created_at).toLocaleDateString('id-ID', {
+            month: 'short',
+            day: 'numeric'
           })
+          votesPerDay[date] = (votesPerDay[date] || 0) + 1
+        })
 
-          // Load member's rooms
-          const { data: rooms } = await supabase
+        const chartData = Object.entries(votesPerDay).map(([date, votes]) => ({
+          date,
+          votes
+        }))
+        setVotingActivityData(chartData)
+
+        // Load room status
+        const closedCount = (roomsResult.count || 0) - (activeRoomsResult.count || 0)
+        setRoomStatusData([
+          { name: 'Active', value: activeRoomsResult.count || 0 },
+          { name: 'Closed', value: closedCount }
+        ])
+      } else {
+        // MEMBER: Load only personal stats
+        console.log('Loading member stats for user:', currentUserId)
+        const [myRoomsResult, activeMyRoomsResult, myVotesResult] = await Promise.all([
+          supabase
             .from('voting_rooms')
-            .select('*, users(email)')
-            .eq('created_by', user.id)
-            .order('created_at', { ascending: false })
-            .limit(5)
+            .select('id', { count: 'exact', head: true })
+            .eq('created_by', currentUserId!),
+          supabase
+            .from('voting_rooms')
+            .select('id', { count: 'exact', head: true })
+            .eq('created_by', currentUserId!)
+            .eq('status', 'active'),
+          supabase
+            .from('votes')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', currentUserId!),
+        ])
 
-          setRecentRooms(rooms || [])
+        console.log('Member stats:', {
+          myRooms: myRoomsResult.count,
+          activeRooms: activeMyRoomsResult.count,
+          myVotes: myVotesResult.count,
+        })
+
+        setStats({
+          totalMembers: 0,
+          totalRooms: myRoomsResult.count || 0,
+          activeRooms: activeMyRoomsResult.count || 0,
+          totalVotes: myVotesResult.count || 0,
+          myRooms: myRoomsResult.count || 0,
+          myVotes: myVotesResult.count || 0,
+        })
+
+        // Load member's rooms - SIMPLE QUERY tanpa JOIN
+        console.log('Fetching member rooms for:', currentUserId)
+        
+        const { data: rooms, error: roomsError } = await supabase
+          .from('voting_rooms')
+          .select('id, title, description, created_by, status, created_at, updated_at')
+          .eq('created_by', currentUserId!)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (roomsError) {
+          console.error('Query error:', {
+            code: roomsError.code,
+            message: roomsError.message,
+            details: roomsError.details,
+          })
+          setError(`Query error: ${roomsError.message}`)
+        } else {
+          console.log('Query success, member rooms:', rooms?.length)
+          setRecentRooms((rooms?.map(r => ({ ...r, users: null })) as RecentRoom[]) || [])
         }
       }
     } catch (error) {
       console.error('Error loading dashboard data:', error)
+      setError(error instanceof Error ? error.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -202,6 +266,25 @@ export default function DashboardPage() {
             : 'Welcome back! Here is your voting activity overview'}
         </p>
       </div>
+
+      {/* Debug Info - Remove in production */}
+      {/* {process.env.NODE_ENV === 'development' && (
+        <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="pt-6">
+            <p className="text-xs text-blue-800 dark:text-blue-200">
+              Debug: userId={userId}, role={userRole}, rooms={stats.totalRooms}, error={error || 'none'}
+            </p>
+          </CardContent>
+        </Card>
+      )} */}
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

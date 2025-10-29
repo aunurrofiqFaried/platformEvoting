@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Loader2, Plus, X } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ArrowLeft, Loader2, Plus, X, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -41,6 +42,7 @@ export default function EditRoomPage() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [submitting, setSubmitting] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
   
   // Form state
   const [title, setTitle] = useState<string>('')
@@ -54,66 +56,110 @@ export default function EditRoomPage() {
 
   useEffect(() => {
     const loadRoomData = async (): Promise<void> => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (!authUser) {
-        router.push('/auth/login')
-        return
+      try {
+        setError(null)
+
+        // Small delay untuk ensure localStorage ready
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Check localStorage dulu
+        let userId = localStorage.getItem('userId')
+        let userEmail = localStorage.getItem('userEmail')
+        let userRole = localStorage.getItem('userRole') as 'admin' | 'member' | null
+
+        console.log('Edit room auth check:', { hasAuth: !!userId, role: userRole })
+
+        // Fallback ke Supabase Auth
+        if (!userId || !userRole) {
+          const { data: { user: authUser } } = await supabase.auth.getUser()
+          
+          if (!authUser) {
+            router.push('/auth/login')
+            return
+          }
+
+          userId = authUser.id
+          userEmail = authUser.email || ''
+
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single()
+
+          if (!userData) {
+            router.push('/auth/login')
+            return
+          }
+
+          userRole = userData.role
+          setUser(userData)
+        } else {
+          setUser({
+            id: userId,
+            email: userEmail || '',
+            role: userRole
+          })
+        }
+
+        console.log('Loading room:', roomId, 'for user:', userId)
+
+        // Load room data - simple query
+        const { data: roomData, error: roomError } = await supabase
+          .from('voting_rooms')
+          .select('id, title, description, created_by, status')
+          .eq('id', roomId)
+          .single()
+
+        if (roomError || !roomData) {
+          console.error('Room load error:', roomError)
+          const errorMsg = roomError?.message || 'Room not found'
+          setError(`Failed to load room: ${errorMsg}`)
+          toast.error(errorMsg)
+          setTimeout(() => router.push('/dashboard/my-rooms'), 1500)
+          return
+        }
+
+        console.log('Room loaded:', roomData)
+
+        // Check if user is the owner
+        if (roomData.created_by !== userId) {
+          setError('You do not have permission to edit this room')
+          toast.error('You do not have permission to edit this room')
+          setTimeout(() => router.push('/dashboard/my-rooms'), 1500)
+          return
+        }
+
+        setTitle(roomData.title || '')
+        setDescription(roomData.description || '')
+
+        // Load candidates
+        const { data: candidatesData, error: candidatesError } = await supabase
+          .from('candidates')
+          .select('id, name, description, image_url')
+          .eq('room_id', roomId)
+          .order('created_at', { ascending: true })
+
+        if (candidatesError) {
+          console.error('Candidates load error:', candidatesError)
+        } else if (candidatesData && candidatesData.length > 0) {
+          console.log('Candidates loaded:', candidatesData.length)
+          setCandidates(candidatesData.map(c => ({
+            id: c.id,
+            name: c.name || '',
+            description: c.description || '',
+            image_url: c.image_url || ''
+          })))
+        }
+
+        setLoading(false)
+      } catch (err) {
+        console.error('Error loading room data:', err)
+        const errorMsg = err instanceof Error ? err.message : 'Failed to load room'
+        setError(errorMsg)
+        toast.error(errorMsg)
+        setLoading(false)
       }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-
-      if (!userData) {
-        router.push('/auth/login')
-        return
-      }
-
-      setUser(userData)
-
-      // Load room data
-      const { data: roomData, error: roomError } = await supabase
-        .from('voting_rooms')
-        .select('*')
-        .eq('id', roomId)
-        .single()
-
-      if (roomError || !roomData) {
-        toast.error('Room not found')
-        router.push('/dashboard/my-rooms')
-        return
-      }
-
-      // Check if user is the owner
-      if (roomData.created_by !== userData.id) {
-        toast.error('You do not have permission to edit this room')
-        router.push('/dashboard/my-rooms')
-        return
-      }
-
-      setTitle(roomData.title || '')
-      setDescription(roomData.description || '')
-
-      // Load candidates
-      const { data: candidatesData, error: candidatesError } = await supabase
-        .from('candidates')
-        .select('*')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true })
-
-      if (!candidatesError && candidatesData && candidatesData.length > 0) {
-        setCandidates(candidatesData.map(c => ({
-          id: c.id,
-          name: c.name || '',
-          description: c.description || '',
-          image_url: c.image_url || ''
-        })))
-      }
-
-      setLoading(false)
     }
 
     if (roomId) {
@@ -180,22 +226,30 @@ export default function EditRoomPage() {
         })
         .eq('id', roomId)
 
-      if (roomError) throw roomError
+      if (roomError) {
+        console.error('Room update error:', roomError)
+        throw roomError
+      }
 
       // Delete removed candidates
       if (deletedCandidateIds.length > 0) {
+        console.log('Deleting candidates:', deletedCandidateIds)
         const { error: deleteError } = await supabase
           .from('candidates')
           .delete()
           .in('id', deletedCandidateIds)
 
-        if (deleteError) throw deleteError
+        if (deleteError) {
+          console.error('Delete candidates error:', deleteError)
+          throw deleteError
+        }
       }
 
       // Update or insert candidates
       for (const candidate of validCandidates) {
         if (candidate.id) {
           // Update existing candidate
+          console.log('Updating candidate:', candidate.id)
           const { error: updateError } = await supabase
             .from('candidates')
             .update({
@@ -205,9 +259,13 @@ export default function EditRoomPage() {
             })
             .eq('id', candidate.id)
 
-          if (updateError) throw updateError
+          if (updateError) {
+            console.error('Update candidate error:', updateError)
+            throw updateError
+          }
         } else {
           // Insert new candidate
+          console.log('Inserting new candidate:', candidate.name)
           const { error: insertError } = await supabase
             .from('candidates')
             .insert({
@@ -218,7 +276,10 @@ export default function EditRoomPage() {
               vote_count: 0,
             })
 
-          if (insertError) throw insertError
+          if (insertError) {
+            console.error('Insert candidate error:', insertError)
+            throw insertError
+          }
         }
       }
 
@@ -226,7 +287,8 @@ export default function EditRoomPage() {
       router.push('/dashboard/my-rooms')
     } catch (error) {
       console.error('Error updating room:', error)
-      toast.error('Failed to update Voting Room')
+      const errorMsg = error instanceof Error ? error.message : 'Failed to update Voting Room'
+      toast.error(errorMsg)
     } finally {
       setSubmitting(false)
     }
@@ -236,6 +298,24 @@ export default function EditRoomPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-4 p-4">
+        <Link href="/dashboard/my-rooms">
+          <Button variant="ghost" className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to My Rooms
+          </Button>
+        </Link>
+        
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -262,16 +342,27 @@ export default function EditRoomPage() {
         </p>
       </div>
 
+      {/* Debug Info - Development only */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="pt-6">
+            <p className="text-xs text-blue-800 dark:text-blue-200">
+              Debug: userId={user.id}, candidates={candidates.length}, deletedIds={deletedCandidateIds.length}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Room Details */}
-        <Card className="dark:bg-slate-900">
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardHeader>
-            <CardTitle>Room Details</CardTitle>
+            <CardTitle className="dark:text-white">Room Details</CardTitle>
             <CardDescription>Basic information about your voting room</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Room Title *</Label>
+              <Label htmlFor="title" className="dark:text-slate-200">Room Title *</Label>
               <Input
                 id="title"
                 placeholder="e.g., Class President Election 2024"
@@ -279,12 +370,12 @@ export default function EditRoomPage() {
                 onChange={(e) => setTitle(e.target.value)}
                 required
                 disabled={submitting}
-                className="dark:bg-slate-800 dark:border-slate-700"
+                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description" className="dark:text-slate-200">Description</Label>
               <Textarea
                 id="description"
                 placeholder="Describe the purpose of this voting room..."
@@ -292,18 +383,18 @@ export default function EditRoomPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
                 disabled={submitting}
-                className="dark:bg-slate-800 dark:border-slate-700"
+                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Candidates */}
-        <Card className="dark:bg-slate-900">
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Candidates</CardTitle>
+                <CardTitle className="dark:text-white">Candidates</CardTitle>
                 <CardDescription>Add or update candidates for this voting room (min: 2, max: 10)</CardDescription>
               </div>
               <Button
@@ -312,7 +403,7 @@ export default function EditRoomPage() {
                 size="sm"
                 onClick={addCandidate}
                 disabled={submitting || candidates.length >= 10}
-                className="gap-2 dark:border-slate-600"
+                className="gap-2 dark:border-slate-600 dark:text-white"
               >
                 <Plus className="w-4 h-4" />
                 Add Candidate
@@ -341,26 +432,26 @@ export default function EditRoomPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Candidate Name *</Label>
+                  <Label className="dark:text-slate-200">Candidate Name *</Label>
                   <Input
                     placeholder="Enter candidate name"
                     value={candidate.name}
                     onChange={(e) => updateCandidate(index, 'name', e.target.value)}
                     required
                     disabled={submitting}
-                    className="dark:bg-slate-700 dark:border-slate-600"
+                    className="dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Description</Label>
+                  <Label className="dark:text-slate-200">Description</Label>
                   <Textarea
                     placeholder="Brief description about the candidate"
                     value={candidate.description}
                     onChange={(e) => updateCandidate(index, 'description', e.target.value)}
                     rows={2}
                     disabled={submitting}
-                    className="dark:bg-slate-700 dark:border-slate-600"
+                    className="dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                   />
                 </div>
 
@@ -387,7 +478,7 @@ export default function EditRoomPage() {
             {submitting ? 'Updating...' : 'Update Voting Room'}
           </Button>
           <Link href="/dashboard/my-rooms">
-            <Button type="button" variant="outline" disabled={submitting} className="dark:border-slate-600">
+            <Button type="button" variant="outline" disabled={submitting} className="dark:border-slate-600 dark:text-white">
               Cancel
             </Button>
           </Link>
