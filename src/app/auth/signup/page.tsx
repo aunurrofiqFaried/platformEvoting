@@ -159,8 +159,8 @@ export default function SignupPage() {
           )}
 
           {/* OAuth Options */}
-          <div className="space-y-3">
-            <Button
+          {/* <div className="space-y-3"> */}
+            {/* <Button
               type="button"
               onClick={() => handleOAuthSignup('google')}
               disabled={loading || success || oauthLoading !== null}
@@ -177,9 +177,9 @@ export default function SignupPage() {
                   Continue with Google
                 </>
               )}
-            </Button>
+            </Button> */}
 
-            <Button
+            {/* <Button
               type="button"
               onClick={() => handleOAuthSignup('github')}
               disabled={loading || success || oauthLoading !== null}
@@ -196,11 +196,11 @@ export default function SignupPage() {
                   Continue with GitHub
                 </>
               )}
-            </Button>
-          </div>
+            </Button> */}
+          {/* </div> */}
 
           {/* Divider */}
-          <div className="relative">
+          {/* <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-300 dark:border-slate-700" />
             </div>
@@ -209,7 +209,7 @@ export default function SignupPage() {
                 Or signup with email
               </span>
             </div>
-          </div>
+          </div> */}
 
           {/* Email Signup Form */}
           <form onSubmit={handleEmailSignup} className="space-y-4">

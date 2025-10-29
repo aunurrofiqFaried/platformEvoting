@@ -10,7 +10,6 @@ import { toast } from 'sonner'
 export default function AuthCallbackPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(true)
 
   useEffect(() => {
     let isMounted = true
@@ -87,7 +86,6 @@ export default function AuthCallbackPage() {
         console.error('Callback error:', err)
 
         setError(errorMessage)
-        setIsProcessing(false)
         toast.error(errorMessage)
 
         // Redirect to login after 3 seconds
