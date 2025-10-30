@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,8 @@ import { toast } from 'sonner'
 
 function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
@@ -64,8 +67,8 @@ function LoginContent() {
       setPassword('')
       toast.success('Login successful!')
 
-      // Redirect ke dashboard
-      router.push('/dashboard')
+      // Redirect ke redirect parameter atau dashboard
+      router.push(redirectTo)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed'
       setError(errorMessage)
@@ -245,10 +248,3 @@ function LoginContent() {
 export default function LoginPage() {
   return <LoginContent />
 }
-
-
-
-
-
-
-
