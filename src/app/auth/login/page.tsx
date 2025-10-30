@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,6 @@ import { toast } from 'sonner'
 
 function LoginContent() {
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
@@ -22,13 +21,16 @@ function LoginContent() {
   const [error, setError] = useState<string>('')
   const [redirectTo, setRedirectTo] = useState<string>('/dashboard')
 
-  // Handle redirect parameter in useEffect (after mount)
+  // Handle redirect parameter from URL (client-side only)
   useEffect(() => {
-    const redirect = searchParams.get('redirect')
-    if (redirect) {
-      setRedirectTo(redirect)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const redirect = params.get('redirect')
+      if (redirect) {
+        setRedirectTo(redirect)
+      }
     }
-  }, [searchParams])
+  }, [])
 
   const handleEmailLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
